@@ -22,6 +22,37 @@ function countDocumentCharacters(sourceMd = '') {
   return normalized.length;
 }
 
+function computeDocumentCounters(blocks = []) {
+  const normalizedBlocks = Array.isArray(blocks) ? blocks : [];
+  const effectiveBlocks = normalizedBlocks.filter((block) => block.type !== 'document' && block.status !== 'skipped');
+  const translatedBlocks = effectiveBlocks.filter((block) => block.status === 'translated').length;
+  return {
+    totalBlocks: effectiveBlocks.length,
+    translatedBlocks,
+  };
+}
+
+function normalizeUpdatedSourceContent(block, sourceText, translatedText) {
+  const current = block?.sourceContent && typeof block.sourceContent === 'object' && !Array.isArray(block.sourceContent)
+    ? { ...block.sourceContent }
+    : {};
+
+  if (sourceText !== undefined) {
+    if (block.type === 'equation') {
+      current.expression = sourceText;
+    } else if (block.type === 'image') {
+      current.caption = sourceText;
+    }
+    if (Object.prototype.hasOwnProperty.call(current, 'rich_text')) delete current.rich_text;
+  }
+
+  if (translatedText !== undefined && block.type === 'image' && !current.caption && !sourceText) {
+    current.caption = current.caption || '';
+  }
+
+  return current;
+}
+
 router.post('/upload', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: '请选择文件' });
@@ -139,6 +170,106 @@ router.patch('/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.patch('/:id/blocks/:blockId', async (req, res, next) => {
+  try {
+    const document = await prisma.translationDocument.findFirst({
+      where: { id: req.params.id, customerId: req.customerId },
+      select: { id: true },
+    });
+    if (!document) return res.status(404).json({ error: '文档不存在' });
+
+    const block = await prisma.translationBlock.findFirst({
+      where: { id: req.params.blockId, documentId: document.id },
+    });
+    if (!block) return res.status(404).json({ error: 'Block 不存在' });
+
+    const hasSourceText = Object.prototype.hasOwnProperty.call(req.body || {}, 'sourceText');
+    const hasTranslatedText = Object.prototype.hasOwnProperty.call(req.body || {}, 'translatedText');
+
+    if (!hasSourceText && !hasTranslatedText) {
+      return res.status(400).json({ error: '请提供需要更新的内容' });
+    }
+
+    const nextSourceText = hasSourceText ? String(req.body.sourceText ?? '') : block.sourceText;
+    const nextTranslatedText = hasTranslatedText ? String(req.body.translatedText ?? '') : block.translatedText;
+    const nextSourceContent = normalizeUpdatedSourceContent(block, hasSourceText ? nextSourceText : undefined, hasTranslatedText ? nextTranslatedText : undefined);
+
+    const updated = await prisma.translationBlock.update({
+      where: { id: block.id },
+      data: {
+        sourceText: nextSourceText,
+        translatedText: nextTranslatedText,
+        sourceContent: nextSourceContent,
+        status: nextTranslatedText ? 'translated' : (block.status === 'translated' ? 'pending' : block.status),
+        errorMsg: null,
+      },
+    });
+
+    const counters = computeDocumentCounters(await prisma.translationBlock.findMany({
+      where: { documentId: document.id },
+      select: { type: true, status: true },
+    }));
+    await prisma.translationDocument.update({
+      where: { id: document.id },
+      data: {
+        totalBlocks: counters.totalBlocks,
+        translatedBlocks: counters.translatedBlocks,
+      },
+    });
+
+    res.json({ block: updated });
+  } catch (err) { next(err); }
+});
+
+router.post('/:id/blocks/restore', async (req, res, next) => {
+  try {
+    const document = await prisma.translationDocument.findFirst({
+      where: { id: req.params.id, customerId: req.customerId },
+      select: { id: true },
+    });
+    if (!document) return res.status(404).json({ error: '文档不存在' });
+
+    const block = req.body?.block;
+    if (!block?.id) return res.status(400).json({ error: '缺少待恢复的 block 数据' });
+
+    const existing = await prisma.translationBlock.findFirst({
+      where: { id: block.id, documentId: document.id },
+      select: { id: true },
+    });
+    if (existing) return res.status(409).json({ error: '该 block 已存在' });
+
+    const restored = await prisma.translationBlock.create({
+      data: {
+        id: String(block.id),
+        documentId: document.id,
+        rootId: String(block.rootId || block.id),
+        parentId: block.parentId ? String(block.parentId) : null,
+        type: String(block.type || 'paragraph'),
+        sequence: Number(block.sequence || 0),
+        sourceContent: block.sourceContent ?? null,
+        sourceText: block.sourceText == null ? null : String(block.sourceText),
+        translatedText: block.translatedText == null ? null : String(block.translatedText),
+        status: String(block.status || (block.translatedText ? 'translated' : 'pending')),
+        errorMsg: block.errorMsg == null ? null : String(block.errorMsg),
+      },
+    });
+
+    const counters = computeDocumentCounters(await prisma.translationBlock.findMany({
+      where: { documentId: document.id },
+      select: { type: true, status: true },
+    }));
+    await prisma.translationDocument.update({
+      where: { id: document.id },
+      data: {
+        totalBlocks: counters.totalBlocks,
+        translatedBlocks: counters.translatedBlocks,
+      },
+    });
+
+    res.status(201).json({ block: restored });
+  } catch (err) { next(err); }
+});
+
 router.get('/:id/export-pdf', async (req, res, next) => {
   try {
     const document = await prisma.translationDocument.findFirst({
@@ -187,6 +318,37 @@ router.delete('/:id', async (req, res, next) => {
     const result = await deleteTranslation(req.params.id, req.customerId);
     if (!result.ok) return res.status(result.code).json({ error: result.error });
     res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+router.delete('/:id/blocks/:blockId', async (req, res, next) => {
+  try {
+    const document = await prisma.translationDocument.findFirst({
+      where: { id: req.params.id, customerId: req.customerId },
+      select: { id: true },
+    });
+    if (!document) return res.status(404).json({ error: '文档不存在' });
+
+    const block = await prisma.translationBlock.findFirst({
+      where: { id: req.params.blockId, documentId: document.id },
+    });
+    if (!block) return res.status(404).json({ error: 'Block 不存在' });
+
+    await prisma.translationBlock.delete({ where: { id: block.id } });
+
+    const counters = computeDocumentCounters(await prisma.translationBlock.findMany({
+      where: { documentId: document.id },
+      select: { type: true, status: true },
+    }));
+    await prisma.translationDocument.update({
+      where: { id: document.id },
+      data: {
+        totalBlocks: counters.totalBlocks,
+        translatedBlocks: counters.translatedBlocks,
+      },
+    });
+
+    res.json({ success: true, block });
   } catch (err) { next(err); }
 });
 
