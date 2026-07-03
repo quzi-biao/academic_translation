@@ -1,0 +1,11 @@
+FROM node:20-bookworm-slim
+WORKDIR /app/server
+RUN apt-get update && apt-get install -y --no-install-recommends pandoc ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY server/package*.json ./
+RUN npm install
+COPY server/prisma ./prisma
+RUN npx prisma generate
+COPY server/src ./src
+COPY server/scripts ./scripts
+EXPOSE 7000
+CMD ["npm", "start"]

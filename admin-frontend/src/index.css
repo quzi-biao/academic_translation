@@ -1,0 +1,48 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; }
+body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+
+/* 覆盖 antd sidebar/layout 背景 */
+.admin-sider { background: #fff !important; border-right: 1px solid #f0f0f0; }
+.admin-layout { min-height: 100vh; }
+.admin-content {
+  background: #f5f7fa;
+  padding: 24px;
+  /* 始终显示滚动条并保留占位，防止弹窗开关时内容区宽度跳动 */
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+.admin-header {
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+  padding: 0 24px;
+  display: flex; align-items: center; gap: 12px;
+  height: 56px;
+}
+.admin-logo {
+  font-size: 16px; font-weight: 700; color: #4f46e5;
+  display: flex; align-items: center; gap: 8px;
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.admin-sider .ant-menu-item-selected,
+.admin-sider .ant-menu-item-selected a,
+.admin-sider .ant-menu-item-selected .ant-menu-title-content,
+.admin-sider .ant-menu-item-selected .anticon {
+  color: #fff !important;
+}
+
+/* 话题缓存图片 */
+.topic-thumb {
+  width: 44px; height: 44px; border-radius: 6px; object-fit: cover;
+  cursor: zoom-in; border: 1px solid #f0f0f0;
+}
+.topic-thumb:hover { opacity: .85; }
+
+/* 缩短设备码字体 */
+.device-code {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px; color: #4f46e5;
+  background: #ede9fe; padding: 2px 6px; border-radius: 4px;
+}

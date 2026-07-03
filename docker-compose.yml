@@ -1,0 +1,71 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: academic-translation-api:latest
+    container_name: academic-translation-api
+    restart: unless-stopped
+    ports:
+      - "7000:7000"
+    environment:
+      NODE_ENV: production
+      PORT: 7000
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      OSS_ENDPOINT: ${OSS_ENDPOINT}
+      OSS_KEY_ID: ${OSS_KEY_ID}
+      OSS_KEY_SECRET: ${OSS_KEY_SECRET}
+      OSS_BUCKET: ${OSS_BUCKET}
+      OSS_FOLDER: ${OSS_FOLDER:-academic_translation}
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-gemini-2.5-flash}
+      MINERU_BIN: ${MINERU_BIN}
+      WX_APPID: ${WX_APPID}
+      WX_MCHID: ${WX_MCHID}
+      WX_PUBLIC_KEY_ID: ${WX_PUBLIC_KEY_ID}
+      WX_SERIAL_NO: ${WX_SERIAL_NO}
+      WX_PRIVATE_KEY_PATH: ${WX_PRIVATE_KEY_PATH:-/app/certs/apiclient_key.pem}
+      WX_PUBLIC_KEY_PATH: ${WX_PUBLIC_KEY_PATH:-/app/certs/pub_key.pem}
+      WX_NOTIFY_URL: ${WX_NOTIFY_URL}
+    volumes:
+      - ${WX_CERTS_DIR:-./certs}:/app/certs:ro
+      - ${MINERU_RUNTIME_DIR:-./mineru_runtime}:${MINERU_RUNTIME_DIR:-./mineru_runtime}:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:7000/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  web-app:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        APP_DIR: web-app
+        NGINX_CONF: deploy/nginx-web.conf
+    image: academic-translation-web:latest
+    container_name: academic-translation-web
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "7001:7001"
+
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        APP_DIR: admin-frontend
+        NGINX_CONF: deploy/nginx-admin.conf
+    image: academic-translation-admin:latest
+    container_name: academic-translation-admin
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "7002:7002"

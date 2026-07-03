@@ -1,0 +1,234 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 后台管理员
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  avatarUrl    String?
+  role         String   @default("manager") // superadmin | manager
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")
+}
+
+// C 端用户
+model Customer {
+  id           String   @id @default(cuid())
+  phone        String?  @unique
+  email        String?  @unique
+  username     String?
+  passwordHash String
+  avatarUrl    String?
+  status       String   @default("active") // active | disabled
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  wallet      CustomerWallet?
+  orders      Order[]
+  documents   TranslationDocument[]
+  ledgers     PointLedger[]
+  tickets     SupportTicket[]
+
+  @@index([phone])
+  @@index([email])
+  @@map("customers")
+}
+
+model CustomerWallet {
+  id         String   @id @default(cuid())
+  customerId String   @unique
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  balance    Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  ledger PointLedger[]
+
+  @@map("customer_wallets")
+}
+
+model PointLedger {
+  id         String         @id @default(cuid())
+  walletId   String
+  wallet     CustomerWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  delta      Int
+  balance    Int
+  type       String // purchase | consume_translation | admin_grant | init | refund
+  refId      String?
+  reason     String?
+  operatorId String?
+  createdAt  DateTime       @default(now())
+
+  @@index([walletId])
+  @@index([customerId])
+  @@map("point_ledgers")
+}
+
+model GlobalConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("global_configs")
+}
+
+model Plan {
+  id              String   @id @default(cuid())
+  name            String
+  price           Int      // 分
+  points          Int
+  descriptionJson String?  @db.Text
+  coverImageUrl   String?
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  orders Order[]
+
+  @@map("plans")
+}
+
+model Order {
+  id        String    @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  planId    String?
+  plan      Plan?     @relation(fields: [planId], references: [id])
+  amount    Int
+  points    Int
+  status    String    @default("pending") // pending | paid | failed | cancelled | refunded
+  createdAt DateTime  @default(now())
+  paidAt    DateTime?
+
+  payment Payment?
+
+  @@index([customerId])
+  @@map("orders")
+}
+
+model Payment {
+  id             String   @id @default(cuid())
+  orderId        String   @unique
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  channel        String
+  channelOrderId String?
+  rawResponse    Json?
+  paidAt         DateTime?
+  createdAt      DateTime @default(now())
+
+  @@map("payments")
+}
+
+model TranslationDocument {
+  id               String   @id @default(cuid())
+  customerId        String
+  customer          Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  originalName      String
+  fileType          String
+  fileSize          Int
+  sourceUrl         String?
+  sourceMd          String?  @db.Text
+  summary           String?  @db.Text
+  domain            String?
+  authorStyle       String?  @db.Text
+  translationPrompt String?  @db.Text
+  sourceLang        String   @default("auto")
+  targetLang        String   @default("zh-CN")
+  status            String   @default("queued") // queued | parsing | summarizing | translating | completed | failed
+  progress          Int      @default(0)
+  errorMsg          String?  @db.Text
+  totalBlocks       Int      @default(0)
+  translatedBlocks  Int      @default(0)
+  pointCost         Int      @default(0)
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  blocks TranslationBlock[]
+
+  @@index([customerId, createdAt])
+  @@index([status])
+  @@map("translation_documents")
+}
+
+model TranslationBlock {
+  id             String   @id
+  documentId     String
+  document       TranslationDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  rootId         String
+  parentId       String?
+  type           String
+  sequence       Int
+  sourceContent  Json?
+  sourceText     String?  @db.Text
+  translatedText String?  @db.Text
+  status         String   @default("pending") // pending | translated | skipped | failed
+  errorMsg       String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([documentId, sequence])
+  @@map("translation_blocks")
+}
+
+model SupportTicket {
+  id           String   @id @default(cuid())
+  customerId   String?
+  customer     Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  title        String
+  type         String   @default("feedback")
+  status       String   @default("open")
+  priority     String   @default("medium")
+  contactName  String?
+  contactPhone String?
+  description  String   @db.Text
+  resolution   String?  @db.Text
+  resolvedAt   DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  messages SupportTicketMessage[]
+
+  @@index([customerId])
+  @@index([status])
+  @@map("support_tickets")
+}
+
+model SupportTicketMessage {
+  id         String   @id @default(cuid())
+  ticketId   String
+  ticket     SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorType String   @default("agent")
+  authorName String?
+  content    String   @db.Text
+  createdAt  DateTime @default(now())
+
+  @@index([ticketId])
+  @@map("support_ticket_messages")
+}
+
+model Agreement {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  title     String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("agreements")
+}
