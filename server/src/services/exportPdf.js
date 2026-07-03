@@ -85,14 +85,31 @@ function paragraphLikeMarkdown(text) {
 }
 
 function protectMath(md) {
-  return String(md || '')
-    .replace(/\$\$([\s\S]+?)\$\$/g, (_m, expr) => `<div class="math math-display">${renderMath(expr, true)}</div>`)
-    .replace(/\$([^$\n]+?)\$/g, (_m, expr) => `<span class="math math-inline">${renderMath(expr, false)}</span>`);
+  const placeholders = [];
+  const text = String(md || '')
+    .replace(/\$\$([\s\S]+?)\$\$/g, (_m, expr) => {
+      const token = `@@DISPLAY_MATH_${placeholders.length}@@`;
+      placeholders.push({ token, html: `<div class="math math-display">${renderMath(expr, true)}</div>`, display: true });
+      return token;
+    })
+    .replace(/\$([^$\n]+?)\$/g, (_m, expr) => {
+      const token = `@@INLINE_MATH_${placeholders.length}@@`;
+      placeholders.push({ token, html: `<span class="math math-inline">${renderMath(expr, false)}</span>`, display: false });
+      return token;
+    });
+  return { text, placeholders };
 }
 
 function markdownToHtml(md) {
-  const safe = protectMath(md);
-  return marked.parse(safe, { gfm: true, breaks: false });
+  const { text, placeholders } = protectMath(md);
+  let html = marked.parse(text, { gfm: true, breaks: false });
+  for (const placeholder of placeholders) {
+    if (placeholder.display) {
+      html = html.replace(new RegExp(`<p>${placeholder.token}</p>`, 'g'), placeholder.html);
+    }
+    html = html.replaceAll(placeholder.token, placeholder.html);
+  }
+  return html;
 }
 
 function renderTextBlock(block) {
