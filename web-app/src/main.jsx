@@ -8,6 +8,7 @@ import {
   Ellipsis,
   Eye,
   LogOut,
+  Pencil,
   RefreshCcw,
   Trash2,
   UploadCloud,
@@ -156,11 +157,35 @@ function NoticeModal({ open, title, message, tone = 'info', confirmText = '知�
   </div>;
 }
 
+function RenameModal({ open, currentName = '', value, onChange, onConfirm, onCancel, busy = false }) {
+  if (!open) return null;
+  return <div className="payment-modal-overlay" onClick={onCancel}>
+    <div className="payment-modal confirm-modal" onClick={(e) => e.stopPropagation()}>
+      <h3>重命名文献</h3>
+      <p className="rename-current-label">当前文件名</p>
+      <p className="rename-current-name">{currentName || '未命名文献'}</p>
+      <input
+        className="rename-input"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="请输入新的文献名称"
+        maxLength={120}
+        autoFocus
+      />
+      <div className="confirm-modal-actions">
+        <button className="ghost" onClick={onCancel} disabled={busy}>取消</button>
+        <button className="primary" onClick={onConfirm} disabled={busy || !String(value || '').trim()}>{busy ? '保存中...' : '保存'}</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function Dashboard() {
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openMenuId, setOpenMenuId] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const [renameState, setRenameState] = useState({ open: false, id: '', currentName: '', value: '', busy: false });
   const menuRef = useRef(null);
   const load = async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -242,6 +267,35 @@ function Dashboard() {
       },
     });
   };
+  const openRename = (e, doc) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setRenameState({
+      open: true,
+      id: doc.id,
+      currentName: stripFileExtension(doc.originalName),
+      value: stripFileExtension(doc.originalName),
+      busy: false,
+    });
+  };
+  const submitRename = async () => {
+    const nextName = String(renameState.value || '').trim();
+    if (!nextName || !renameState.id) return;
+    setRenameState((current) => ({ ...current, busy: true }));
+    try {
+      await api(`/documents/${renameState.id}`, { method: 'PATCH', body: { originalName: nextName } });
+      setRenameState({ open: false, id: '', currentName: '', value: '', busy: false });
+      await load();
+    } catch (err) {
+      setRenameState((current) => ({ ...current, busy: false }));
+      setConfirmState({
+        title: '重命名失败',
+        message: err.message || '文献名称更新失败，请稍后重试。',
+        confirmText: '知道了',
+        onConfirm: () => setConfirmState(null),
+      });
+    }
+  };
   const renderDocumentCardBody = (d) => <>
     <div className="doc-card-main">
       <h3>{stripFileExtension(d.originalName)}</h3>
@@ -254,6 +308,7 @@ function Dashboard() {
     <div className="card-menu" ref={openMenuId === d.id ? menuRef : null} onClick={(e) => e.stopPropagation()}>
       <button className="card-menu-trigger ghost icon-only" aria-label="操作菜单" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenMenuId((current) => current === d.id ? null : d.id); }}><Ellipsis size={16} /></button>
       {openMenuId === d.id && <div className="card-menu-popover">
+        <button type="button" className="menu-item" onClick={(e) => { setOpenMenuId(null); openRename(e, d); }}><Pencil size={15} />重命名</button>
         {!isActiveTranslationStatus(d.status) && <button type="button" className="menu-item" onClick={async (e) => { setOpenMenuId(null); confirmStartDoc(e, d); }}><RefreshCcw size={15} />翻译</button>}
         {isActiveTranslationStatus(d.status) && <button type="button" className="menu-item" onClick={async (e) => { setOpenMenuId(null); await stopDoc(e, d.id); }}><RefreshCcw size={15} />停止</button>}
         {d.status === 'failed' && <button type="button" className="menu-item" onClick={async (e) => { setOpenMenuId(null); await retryDoc(e, d.id); }}><RefreshCcw size={15} />重试</button>}
@@ -274,6 +329,15 @@ function Dashboard() {
       confirmText={confirmState?.confirmText}
       onConfirm={confirmState?.onConfirm}
       onCancel={() => setConfirmState(null)}
+    />
+    <RenameModal
+      open={renameState.open}
+      currentName={renameState.currentName}
+      value={renameState.value}
+      onChange={(value) => setRenameState((current) => ({ ...current, value }))}
+      onConfirm={submitRename}
+      onCancel={() => !renameState.busy && setRenameState({ open: false, id: '', currentName: '', value: '', busy: false })}
+      busy={renameState.busy}
     />
   </Shell>;
 }

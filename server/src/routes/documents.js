@@ -121,6 +121,24 @@ router.get('/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.patch('/:id', async (req, res, next) => {
+  try {
+    const originalName = String(req.body?.originalName || '').trim();
+    if (!originalName) return res.status(400).json({ error: '请输入文献名称' });
+    const document = await prisma.translationDocument.findFirst({
+      where: { id: req.params.id, customerId: req.customerId },
+      select: { id: true },
+    });
+    if (!document) return res.status(404).json({ error: '文档不存在' });
+    const updated = await prisma.translationDocument.update({
+      where: { id: document.id },
+      data: { originalName },
+      select: { id: true, originalName: true },
+    });
+    res.json({ document: updated });
+  } catch (err) { next(err); }
+});
+
 router.get('/:id/export-pdf', async (req, res, next) => {
   try {
     const document = await prisma.translationDocument.findFirst({
