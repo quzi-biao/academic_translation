@@ -7,12 +7,10 @@ import {
   Coins,
   Ellipsis,
   Eye,
-  FileText,
   LogOut,
   RefreshCcw,
   Trash2,
   UploadCloud,
-  WalletCards,
 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import ReactMarkdown from 'react-markdown';
@@ -55,24 +53,8 @@ function RequireAuth({ children }) {
   return getToken() ? children : <Navigate to="/login" replace />;
 }
 
-function Shell({ children, collapsed = false, onToggleSidebar, contentClassName = '', hideSidebar = false }) {
-  const navigate = useNavigate();
-  const customer = useMemo(() => {
-    try { return JSON.parse(localStorage.getItem('wenyi_customer') || 'null'); } catch { return null; }
-  }, []);
-  const logout = () => { clearSession(); navigate('/login'); };
-  return <div className={`app-shell${collapsed ? ' shell-collapsed' : ''}${hideSidebar ? ' shell-no-sidebar' : ''}`}>
-    {!hideSidebar && <aside className="sidebar">
-      <Link className="brand" to="/dashboard">{!collapsed && <><span>闻一</span><small>Academic Translation</small></>}</Link>
-      <nav>
-        <Link to="/dashboard"><FileText size={18}/> {!collapsed && '文献'}</Link>
-        <Link to="/upload"><UploadCloud size={18}/> {!collapsed && '上传翻译'}</Link>
-        <Link to="/wallet"><WalletCards size={18}/> {!collapsed && '点数钱包'}</Link>
-      </nav>
-      <div className="profile">
-        {!collapsed && <div className="profile-inline"><span>{customer?.username || customer?.phone || customer?.email}</span><button className="profile-logout" onClick={logout}><LogOut size={14}/><span>退出</span></button></div>}
-      </div>
-    </aside>}
+function Shell({ children, contentClassName = '' }) {
+  return <div className="app-shell">
     <main className={`main-panel ${contentClassName}`.trim()}>{children}</main>
   </div>;
 }
@@ -94,7 +76,7 @@ function LoginPage({ mode = 'login' }) {
   };
   return <div className="auth-page">
     <div className="auth-card">
-      <div className="auth-copy"><BookOpenText size={34}/><h1>闻一翻译</h1><p>把 PDF/DOCX 学术文献拆成可对应的知识块，先理解论文，再逐块翻译。</p></div>
+      <div className="auth-copy"><BookOpenText size={34} /><h1>闻一翻译</h1><p>把 PDF/DOCX 学术文献拆成可对应的知识块，先理解论文，再逐块翻译。</p></div>
       <form onSubmit={submit}>
         <h2>{mode === 'register' ? '创建账号' : '登录账号'}</h2>
         {mode === 'register' && <input placeholder="昵称，可选" value={username} onChange={(e) => setUsername(e.target.value)} />}
@@ -108,11 +90,80 @@ function LoginPage({ mode = 'login' }) {
   </div>;
 }
 
+function stripFileExtension(name = '') {
+  return String(name || '').replace(/\.[^.]+$/, '');
+}
+
+function isActiveTranslationStatus(status) {
+  return ['queued', 'parsing', 'summarizing', 'translating'].includes(status);
+}
+
+function statusNeedsDots(status) {
+  return ['queued', 'parsing', 'summarizing', 'translating'].includes(status);
+}
+
+function TypingDots() {
+  const frames = ['', '.', '..', '...'];
+  const [frameIndex, setFrameIndex] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setFrameIndex((current) => (current + 1) % frames.length);
+    }, 400);
+    return () => window.clearInterval(timer);
+  }, []);
+  return <span className="typing-dots" aria-hidden="true">{frames[frameIndex]}</span>;
+}
+
+function documentStatusHint(doc) {
+  if (doc.summary || doc.errorMsg) return doc.summary || doc.errorMsg;
+  if (doc.status === 'uploaded') return '文献已上传，等待开始翻译。';
+  if (doc.status === 'stopped') return '翻译任务已停止，可稍后继续。';
+  if (doc.status === 'parsing' && (doc.progress || 0) <= 5) return 'PDF 正在解析中，系统正在调用文档解析引擎处理原文，此步骤消耗时间较长（3-15分钟），请稍候。';
+  if (doc.status === 'parsing') return '文档结构正在提取中，翻译任务仍在继续。';
+  if (doc.status === 'summarizing') return '系统正在总结文献并生成翻译提示词。';
+  if (doc.status === 'translating') return '系统正在逐段翻译文献内容。';
+  if (doc.status === 'queued') return '任务已进入队列，等待开始处理。';
+  return '等待系统解析、总结并翻译。';
+}
+
+function formatCharCount(value) {
+  const count = Number(value || 0);
+  if (!count) return '待解析';
+  return `${count.toLocaleString('zh-CN')} 字`;
+}
+
+function ConfirmModal({ open, title, message, confirmText = '确认', cancelText = '取消', tone = 'default', onConfirm, onCancel }) {
+  if (!open) return null;
+  return <div className="payment-modal-overlay" onClick={onCancel}>
+    <div className={`payment-modal confirm-modal confirm-modal-${tone}`} onClick={(e) => e.stopPropagation()}>
+      <h3>{title}</h3>
+      <p>{message}</p>
+      <div className="confirm-modal-actions">
+        <button className="ghost" onClick={onCancel}>{cancelText}</button>
+        <button className={tone === 'danger' ? 'primary danger-primary' : 'primary'} onClick={onConfirm}>{confirmText}</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function NoticeModal({ open, title, message, tone = 'info', confirmText = '知道了', onConfirm }) {
+  if (!open) return null;
+  return <div className="payment-modal-overlay" onClick={onConfirm}>
+    <div className={`payment-modal confirm-modal confirm-modal-${tone}`} onClick={(e) => e.stopPropagation()}>
+      <h3>{title}</h3>
+      <p>{message}</p>
+      <div className="confirm-modal-actions">
+        <button className="primary" onClick={onConfirm}>{confirmText}</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function Dashboard() {
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [collapsed, setCollapsed] = useState(false);
   const [openMenuId, setOpenMenuId] = useState(null);
+  const [confirmState, setConfirmState] = useState(null);
   const menuRef = useRef(null);
   const load = async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -138,9 +189,16 @@ function Dashboard() {
   const removeDoc = async (e, id) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!window.confirm('删除后不可找回，确定删除这个翻译任务吗？')) return;
-    await api(`/documents/${id}`, { method: 'DELETE' });
-    await load();
+    setConfirmState({
+      title: '删除翻译任务',
+      message: '删除后不可找回，确定删除这个翻译任务吗？',
+      tone: 'danger',
+      onConfirm: async () => {
+        setConfirmState(null);
+        await api(`/documents/${id}`, { method: 'DELETE' });
+        await load();
+      },
+    });
   };
   const retryDoc = async (e, id) => {
     e.preventDefault();
@@ -148,25 +206,60 @@ function Dashboard() {
     await api(`/documents/${id}/retry`, { method: 'POST' });
     await load();
   };
-  return <Shell collapsed={collapsed} onToggleSidebar={() => setCollapsed((v) => !v)}>
-    <Header title="我的文献列表" action={<Link className="primary-link" to="/upload">上传新文献</Link>} />
-    <div className="doc-grid">{loading && <p>加载中...</p>}{docs.map((d) => <Link className="doc-card" to={`/documents/${d.id}`} key={d.id}>
-      <div className="doc-card-main">
-        <h3>{d.originalName}</h3>
-        <p className="doc-summary">{d.summary || d.errorMsg || '等待系统解析、总结并翻译。'}</p>
-      </div>
-      <div className="doc-card-footer">
-        <div className="progress"><span style={{ width: `${d.progress || 0}%` }} /></div>
-        <div className="doc-meta-line"><small>{d.translatedBlocks}/{d.effectiveTotalBlocks || d.totalBlocks} blocks</small><small>{d.pointCost} 点</small><small className={`status-inline ${d.status}`}>{statusText(d.status)}{d.status !== 'completed' && typeof d.progress === 'number' ? ` ${d.progress}%` : ''}</small></div>
-      </div>
-      <div className="card-menu" ref={openMenuId === d.id ? menuRef : null} onClick={(e) => e.stopPropagation()}>
-        <button className="card-menu-trigger ghost icon-only" aria-label="操作菜单" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenMenuId((current) => current === d.id ? null : d.id); }}><Ellipsis size={16} /></button>
-        {openMenuId === d.id && <div className="card-menu-popover">
-          <button type="button" className="menu-item" onClick={async (e) => { setOpenMenuId(null); await retryDoc(e, d.id); }}><RefreshCcw size={15}/>重试</button>
-          <button type="button" className="menu-item danger" onClick={async (e) => { setOpenMenuId(null); await removeDoc(e, d.id); }}><Trash2 size={15}/>删除</button>
-        </div>}
-      </div>
-    </Link>)}</div>
+  const startDoc = async (e, id) => {
+    e.preventDefault();
+    e.stopPropagation();
+    await api(`/documents/${id}/start`, { method: 'POST' });
+    await load();
+  };
+  const stopDoc = async (e, id) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setConfirmState({
+      title: '停止翻译任务',
+      message: '系统会立即中断当前解析、总结或翻译过程，未完成部分不会继续执行。确定继续吗？',
+      tone: 'danger',
+      confirmText: '立即停止',
+      onConfirm: async () => {
+        setConfirmState(null);
+        await api(`/documents/${id}/stop`, { method: 'POST' });
+        await load();
+      },
+    });
+  };
+  const renderDocumentCardBody = (d) => <>
+    <div className="doc-card-main">
+      <h3>{stripFileExtension(d.originalName)}</h3>
+      <p className="doc-summary">{documentStatusHint(d)}{statusNeedsDots(d.status) && <TypingDots />}</p>
+    </div>
+    <div className="doc-card-footer">
+      <div className="progress"><span style={{ width: `${d.progress || 0}%` }} /></div>
+      <div className="doc-meta-line"><small>{formatCharCount(d.charCount)}</small><small>{d.pointCost} 点</small><small className={`status-inline ${d.status}`}>{statusText(d.status)}{statusNeedsDots(d.status) && <TypingDots />}{d.status !== 'completed' && typeof d.progress === 'number' ? ` ${d.progress}%` : ''}</small></div>
+    </div>
+    <div className="card-menu" ref={openMenuId === d.id ? menuRef : null} onClick={(e) => e.stopPropagation()}>
+      <button className="card-menu-trigger ghost icon-only" aria-label="操作菜单" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenMenuId((current) => current === d.id ? null : d.id); }}><Ellipsis size={16} /></button>
+      {openMenuId === d.id && <div className="card-menu-popover">
+        {!isActiveTranslationStatus(d.status) && !['completed', 'failed'].includes(d.status) && <button type="button" className="menu-item" onClick={async (e) => { setOpenMenuId(null); await startDoc(e, d.id); }}><RefreshCcw size={15} />翻译</button>}
+        {isActiveTranslationStatus(d.status) && <button type="button" className="menu-item" onClick={async (e) => { setOpenMenuId(null); await stopDoc(e, d.id); }}><RefreshCcw size={15} />停止</button>}
+        {d.status === 'failed' && <button type="button" className="menu-item" onClick={async (e) => { setOpenMenuId(null); await retryDoc(e, d.id); }}><RefreshCcw size={15} />重试</button>}
+        <button type="button" className="menu-item danger" onClick={async (e) => { setOpenMenuId(null); await removeDoc(e, d.id); }}><Trash2 size={15} />删除</button>
+      </div>}
+    </div>
+  </>;
+  return <Shell>
+    <Header title="文献列表" action={<Link className="primary-link" to="/upload">开始翻译</Link>} metaMode="logout" showMetaBalance={true} />
+    <div className="doc-grid">{loading && <p>加载中...</p>}{docs.map((d) => d.status === 'completed'
+      ? <Link className="doc-card" to={`/documents/${d.id}`} key={d.id}>{renderDocumentCardBody(d)}</Link>
+      : <div className="doc-card doc-card-disabled" key={d.id} aria-disabled="true">{renderDocumentCardBody(d)}</div>)}</div>
+    <ConfirmModal
+      open={Boolean(confirmState)}
+      title={confirmState?.title}
+      message={confirmState?.message}
+      tone={confirmState?.tone}
+      confirmText={confirmState?.confirmText}
+      onConfirm={confirmState?.onConfirm}
+      onCancel={() => setConfirmState(null)}
+    />
   </Shell>;
 }
 
@@ -174,32 +267,85 @@ function UploadPage() {
   const [file, setFile] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [actionMode, setActionMode] = useState('translate');
+  const [confirmState, setConfirmState] = useState(null);
+  const [noticeState, setNoticeState] = useState(null);
   const navigate = useNavigate();
-  const submit = async () => {
+  const submit = async (force = false, mode = 'translate') => {
     if (!file) return setError('请先选择文档');
-    setBusy(true); setError('');
-    const form = new FormData(); form.append('file', file);
-    try { const data = await api('/documents/upload', { method: 'POST', body: form }); navigate(`/documents/${data.document.id}`); }
-    catch (err) { setError(err.message); } finally { setBusy(false); }
+    setBusy(true); setActionMode(mode); setError('');
+    const form = new FormData(); form.append('file', file); if (force) form.append('force', '1'); if (mode === 'upload') form.append('autoStart', 'false');
+    try {
+      const data = await api('/documents/upload', { method: 'POST', body: form });
+      if (mode === 'upload' || data.document?.autoStarted === false) {
+        setNoticeState({
+          title: mode === 'upload' ? '上传完成' : '文献已保存',
+          message: data.document.message || '文献已上传，可稍后在列表中手动开始翻译。',
+          onConfirm: () => {
+            setNoticeState(null);
+            navigate('/dashboard');
+          },
+        });
+        return;
+      }
+      navigate(`/documents/${data.document.id}`);
+    }
+    catch (err) {
+      if (err.duplicateDocument) {
+        setConfirmState({
+          title: '文献已存在',
+          message: `文献《${stripFileExtension(err.duplicateDocument.originalName)}》已存在，是否再次上传？`,
+          confirmText: '继续上传',
+          onConfirm: async () => {
+            setConfirmState(null);
+            await submit(true, mode);
+          },
+        });
+        return;
+      }
+      setError(err.message);
+    } finally { setBusy(false); setActionMode('translate'); }
   };
-  return <Shell collapsed={collapsed} onToggleSidebar={() => setCollapsed((v) => !v)}>
-    <Header title="上传学术文献" />
-    <section className="upload-zone"><UploadCloud size={54}/><h2>PDF / DOCX / MD</h2><p>系统会先转 Markdown，再拆成 Block，生成文献总结和翻译提示词后逐块翻译。</p>
-      <input type="file" accept=".pdf,.doc,.docx,.md,.txt" onChange={(e) => setFile(e.target.files?.[0])}/>{file && <b>{file.name}</b>}{error && <p className="error">{error}</p>}<button className="primary" onClick={submit} disabled={busy}>{busy ? '上传中...' : '开始翻译任务'}</button></section>
+  return <Shell>
+    <Header title="上传学术文献" metaMode="back" showMetaBalance={true} />
+    <section className="upload-zone"><UploadCloud size={54} /><h2>PDF / DOCX / MD</h2><p>系统会先转 Markdown，再拆成 Block，生成文献总结和翻译提示词后逐块翻译。</p>
+      <label className="upload-picker" htmlFor="academic-upload-input">
+        <input id="academic-upload-input" className="upload-input" type="file" accept=".pdf,.doc,.docx,.md,.txt" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+        <span className="upload-picker-label">选择文件</span>
+        <span className="upload-picker-hint">支持 PDF、DOC、DOCX、MD、TXT</span>
+        <span className="upload-picker-name">{file ? file.name : '尚未选择文档'}</span>
+      </label>
+      {error && <p className="error">{error}</p>}
+      {file && <div className="upload-actions">
+        <button className="ghost" onClick={() => submit(false, 'upload')} disabled={busy}>{busy && actionMode === 'upload' ? '上传中...' : '上传文件'}</button>
+        <button className="primary" onClick={() => submit(false, 'translate')} disabled={busy}>{busy && actionMode === 'translate' ? '处理中...' : '开始翻译'}</button>
+      </div>}</section>
+    <ConfirmModal
+      open={Boolean(confirmState)}
+      title={confirmState?.title}
+      message={confirmState?.message}
+      confirmText={confirmState?.confirmText}
+      onConfirm={confirmState?.onConfirm}
+      onCancel={() => setConfirmState(null)}
+    />
+    <NoticeModal
+      open={Boolean(noticeState)}
+      title={noticeState?.title}
+      message={noticeState?.message}
+      onConfirm={noticeState?.onConfirm}
+    />
   </Shell>;
 }
 
 function DocumentPage() {
   const { id } = useParams();
   const [doc, setDoc] = useState(null);
-  const [collapsed, setCollapsed] = useState(true);
   const [showSource, setShowSource] = useState(true);
   const [exportingPdf, setExportingPdf] = useState(false);
   const navigate = useNavigate();
   const load = async () => setDoc((await api(`/documents/${id}`)).document);
   useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, [id]);
-  if (!doc) return <Shell collapsed={collapsed} onToggleSidebar={() => setCollapsed((v) => !v)}><p>加载中...</p></Shell>;
+  if (!doc) return <Shell><p>加载中...</p></Shell>;
   const retry = async () => { await api(`/documents/${id}/retry`, { method: 'POST' }); await load(); };
   const summaryContent = doc.summary || doc.errorMsg || '系统正在解析和总结文献。';
 
@@ -217,7 +363,7 @@ function DocumentPage() {
         try {
           const data = await res.json();
           message = data.error || message;
-        } catch {}
+        } catch { }
         throw new Error(message);
       }
       const blob = await res.blob();
@@ -234,10 +380,11 @@ function DocumentPage() {
     }
   };
 
-  return <Shell collapsed={collapsed} onToggleSidebar={() => setCollapsed((v) => !v)} contentClassName="result-page" hideSidebar>
+  return <Shell contentClassName="result-page">
     <Header
-      title={doc.originalName}
-      titlePrefix={<><button className="ghost back-button icon-only" onClick={() => navigate('/dashboard')} aria-label="返回"><ArrowLeft size={15}/></button>{doc.status !== 'completed' && <div className={`ghost status-badge ${doc.status}`}>{renderStatus(doc.status, doc.progress)}</div>}</>}
+      title={stripFileExtension(doc.originalName)}
+      showMeta={false}
+      titlePrefix={<><button className="ghost back-button icon-only" onClick={() => navigate('/dashboard')} aria-label="返回"><ArrowLeft size={15} /></button>{doc.status !== 'completed' && <div className={`ghost status-badge ${doc.status}`}>{renderStatus(doc.status, doc.progress)}</div>}</>}
       action={<div className="header-actions">
         <details className="header-summary-toggle">
           <summary className="ghost summary-toggle-button">内容总结</summary>
@@ -246,7 +393,7 @@ function DocumentPage() {
           </div>
         </details>
         <button className="ghost" onClick={() => setShowSource((v) => !v)}>{showSource ? '隐藏原文' : '显示原文'}</button>
-        <button className="ghost" onClick={exportPdf} disabled={exportingPdf}><Eye size={15}/>{exportingPdf ? '导出中...' : '导出 PDF'}</button>
+        <button className="ghost" onClick={exportPdf} disabled={exportingPdf}><Eye size={15} />{exportingPdf ? '导出中...' : '导出 PDF'}</button>
         {['failed', 'queued', 'parsing', 'summarizing', 'translating'].includes(doc.status) && <button className="ghost" onClick={retry}>重试</button>}
       </div>}
     />
@@ -272,7 +419,6 @@ function WalletPage() {
   const [activeTab, setActiveTab] = useState('ledger');
   const [err, setErr] = useState('');
   const [paymentModal, setPaymentModal] = useState(null);
-  const [collapsed, setCollapsed] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
   const load = async () => {
     const [walletData, plansData, ledgerData, orderData] = await Promise.all([
@@ -349,9 +495,9 @@ function WalletPage() {
       await load();
     } catch (e) { setErr(e.message); }
   };
-  return <Shell collapsed={collapsed} onToggleSidebar={() => setCollapsed((v) => !v)}>
-    <Header title="点数钱包" />
-    <div className="wallet-hero"><Coins size={32}/><span>当前余额</span><strong>{wallet?.balance ?? '--'} 点</strong></div>{err && <p className="error">{err}</p>}
+  return <Shell>
+    <Header title="点数钱包" metaMode="back" showMetaBalance={false} />
+    <div className="wallet-hero"><Coins size={32} /><span>当前余额</span><strong>{wallet?.balance ?? '--'} 点</strong></div>{err && <p className="error">{err}</p>}
     <div className="plans">{plans.map((p) => <button key={p.id} onClick={() => buy(p.id)}><b>{p.name}</b><span>{p.price / 100} 元</span><small>{p.points} 点</small></button>)}</div>
     <div className="wallet-tabs">
       <button className={`wallet-tab${activeTab === 'ledger' ? ' active' : ''}`} onClick={() => setActiveTab('ledger')}>点数记录</button>
@@ -436,17 +582,74 @@ function BlockRenderer({ block, translated = false }) {
   return <div className={blockClassName}><MarkdownContent content={text} /></div>;
 }
 
-function Header({ title, titlePrefix, action }) {
+function HeaderMeta({ mode = 'logout', showBalance = true }) {
+  const navigate = useNavigate();
+  const customer = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem('wenyi_customer') || 'null'); } catch { return null; }
+  }, []);
+  const [balance, setBalance] = useState(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadWallet = async () => {
+      try {
+        const data = await api('/wallet');
+        if (!cancelled) setBalance(data.balance ?? 0);
+      } catch {
+        if (!cancelled) setBalance(null);
+      }
+    };
+    if (getToken()) loadWallet();
+    return () => { cancelled = true; };
+  }, []);
+
+  const logout = () => {
+    clearSession();
+    navigate('/login');
+  };
+
+  return <>
+    <div className="header-meta">
+      {mode === 'back'
+        ? <button className="header-meta-back" onClick={() => navigate('/dashboard')} aria-label="返回">
+          <ArrowLeft size={16} />
+        </button>
+        : <button className="header-meta-logout" onClick={() => setConfirmOpen(true)} aria-label="退出">
+          <LogOut size={16} />
+        </button>}
+      <button className="header-meta-account" onClick={() => navigate('/wallet')}>
+        <span className="header-meta-user">{customer?.username || customer?.phone || customer?.email || '未登录'}</span>
+        {showBalance && <>
+          <span className="header-meta-divider" />
+          <span className="header-meta-balance-text">{balance == null ? '--' : balance} 点</span>
+        </>}
+      </button>
+    </div>
+    <ConfirmModal
+      open={confirmOpen}
+      title="退出系统"
+      message="确定要退出当前系统吗？"
+      confirmText="退出"
+      onConfirm={logout}
+      onCancel={() => setConfirmOpen(false)}
+    />
+  </>;
+}
+
+function Header({ title, titlePrefix, action, metaMode = 'logout', showMetaBalance = true, showMeta = true }) {
   return <div className="page-header">
-    <div className="page-title-wrap">{titlePrefix}<h1>{title}</h1></div>
-    {action}
+    <div className="page-header-side page-header-left">{showMeta && <HeaderMeta mode={metaMode} showBalance={showMetaBalance} />}{titlePrefix}</div>
+    <div className="page-title-wrap"><h1>{title}</h1></div>
+    <div className="page-header-side page-header-right">{action}</div>
   </div>;
 }
 
-function statusText(s) { return ({ queued:'排队中', parsing:'解析中', summarizing:'总结中', translating:'翻译中', completed:'已完成', failed:'失败' }[s] || s); }
+function statusText(s) { return ({ uploaded: '待翻译', queued: '排队中', parsing: '解析中', summarizing: '总结中', translating: '翻译中', stopped: '已停止', completed: '已完成', failed: '失败' }[s] || s); }
 function renderStatus(status, progress) {
   if (status === 'completed') return statusText(status);
-  if (typeof progress === 'number' && progress > 0) return `${statusText(status)} ${progress}%`;
+  if (typeof progress === 'number' && progress > 0) return <>{statusText(status)}{statusNeedsDots(status) && <TypingDots />} {progress}%</>;
+  if (statusNeedsDots(status)) return <>{statusText(status)}<TypingDots /></>;
   return statusText(status);
 }
 function blockFallback(b) {
@@ -530,7 +733,7 @@ function mergeShortBlocks(blocks) {
 }
 
 function App() {
-  return <BrowserRouter><Routes><Route path="/login" element={<LoginPage/>}/><Route path="/register" element={<LoginPage mode="register"/>}/><Route path="/dashboard" element={<RequireAuth><Dashboard/></RequireAuth>}/><Route path="/upload" element={<RequireAuth><UploadPage/></RequireAuth>}/><Route path="/documents/:id" element={<RequireAuth><DocumentPage/></RequireAuth>}/><Route path="/wallet" element={<RequireAuth><WalletPage/></RequireAuth>}/><Route path="*" element={<Navigate to="/dashboard" replace/>}/></Routes></BrowserRouter>;
+  return <BrowserRouter><Routes><Route path="/login" element={<LoginPage />} /><Route path="/register" element={<LoginPage mode="register" />} /><Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} /><Route path="/upload" element={<RequireAuth><UploadPage /></RequireAuth>} /><Route path="/documents/:id" element={<RequireAuth><DocumentPage /></RequireAuth>} /><Route path="/wallet" element={<RequireAuth><WalletPage /></RequireAuth>} /><Route path="*" element={<Navigate to="/dashboard" replace />} /></Routes></BrowserRouter>;
 }
 
-createRoot(document.getElementById('root')).render(<App/>);
+createRoot(document.getElementById('root')).render(<App />);

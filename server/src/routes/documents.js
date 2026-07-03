@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import multer from 'multer';
+import crypto from 'crypto';
 import prisma from '../config/db.js';
 import { requireCustomer } from '../middleware/customerAuth.js';
-import { createTranslationDocument, deleteTranslation, retryTranslation } from '../services/translationJob.js';
+import { createTranslationDocument, deleteTranslation, retryTranslation, startTranslation, stopTranslation } from '../services/translationJob.js';
 import { renderTranslatedPdf } from '../services/exportPdf.js';
 import { supportedExtensions } from '../services/parser/readers.js';
 
@@ -11,12 +12,37 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 80 
 
 router.use(requireCustomer);
 
+function countDocumentCharacters(sourceMd = '') {
+  const normalized = String(sourceMd || '')
+    .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
+    .replace(/\[[^\]]*]\([^)]+\)/g, ' ')
+    .replace(/`{1,3}[\s\S]*?`{1,3}/g, ' ')
+    .replace(/[#>*_\-\[\]\(\)]/g, ' ')
+    .replace(/\s+/g, '');
+  return normalized.length;
+}
+
 router.post('/upload', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: '请选择文件' });
-    const ext = req.file.originalname.split('.').pop()?.toLowerCase() || '';
+    const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+    const ext = originalName.split('.').pop()?.toLowerCase() || '';
     if (!supportedExtensions.has(ext)) return res.status(400).json({ error: '仅支持 PDF、DOCX、DOC、MD、TXT' });
-    const doc = await createTranslationDocument({ customerId: req.customerId, file: req.file });
+    const checksum = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+    const existing = await prisma.translationDocument.findFirst({
+      where: { customerId: req.customerId, fileChecksum: checksum },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, originalName: true, status: true, createdAt: true },
+    });
+    const forceUpload = ['1', 'true', 'yes'].includes(String(req.body.force || '').toLowerCase());
+    if (existing && !forceUpload) {
+      return res.status(409).json({
+        error: '文献已存在，是否再次上传？',
+        duplicateDocument: existing,
+      });
+    }
+    const autoStart = !['0', 'false', 'no'].includes(String(req.body.autoStart || '').toLowerCase());
+    const doc = await createTranslationDocument({ customerId: req.customerId, file: req.file, autoStart });
     res.status(202).json({ document: doc });
   } catch (err) { next(err); }
 });
@@ -33,7 +59,7 @@ router.get('/', async (req, res, next) => {
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
-        select: { id: true, originalName: true, status: true, progress: true, summary: true, totalBlocks: true, translatedBlocks: true, pointCost: true, errorMsg: true, createdAt: true, completedAt: true },
+        select: { id: true, originalName: true, status: true, progress: true, summary: true, totalBlocks: true, translatedBlocks: true, pointCost: true, errorMsg: true, createdAt: true, completedAt: true, sourceMd: true },
       }),
       prisma.translationBlock.groupBy({
         by: ['documentId', 'status'],
@@ -73,9 +99,11 @@ router.get('/', async (req, res, next) => {
         ...doc,
         status,
         progress,
+        charCount: countDocumentCharacters(doc.sourceMd),
         translatedBlocks,
         skippedBlocks: stats.skipped || 0,
         effectiveTotalBlocks,
+        sourceMd: undefined,
       };
     });
     res.json({ total, page, limit, documents: normalizedDocuments });
@@ -115,6 +143,22 @@ router.get('/:id/export-pdf', async (req, res, next) => {
 router.post('/:id/retry', async (req, res, next) => {
   try {
     const result = await retryTranslation(req.params.id, req.customerId);
+    if (!result.ok) return res.status(result.code).json({ error: result.error });
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+router.post('/:id/start', async (req, res, next) => {
+  try {
+    const result = await startTranslation(req.params.id, req.customerId);
+    if (!result.ok) return res.status(result.code).json({ error: result.error });
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+router.post('/:id/stop', async (req, res, next) => {
+  try {
+    const result = await stopTranslation(req.params.id, req.customerId);
     if (!result.ok) return res.status(result.code).json({ error: result.error });
     res.json({ success: true });
   } catch (err) { next(err); }

@@ -137,8 +137,10 @@ model TranslationDocument {
   customerId        String
   customer          Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   originalName      String
+  fileExt           String?
   fileType          String
   fileSize          Int
+  fileChecksum      String?
   sourceUrl         String?
   sourceMd          String?  @db.Text
   summary           String?  @db.Text
@@ -147,7 +149,7 @@ model TranslationDocument {
   translationPrompt String?  @db.Text
   sourceLang        String   @default("auto")
   targetLang        String   @default("zh-CN")
-  status            String   @default("queued") // queued | parsing | summarizing | translating | completed | failed
+  status            String   @default("uploaded") // uploaded | queued | parsing | summarizing | translating | stopped | completed | failed
   progress          Int      @default(0)
   errorMsg          String?  @db.Text
   totalBlocks       Int      @default(0)
@@ -162,6 +164,7 @@ model TranslationDocument {
 
   @@index([customerId, createdAt])
   @@index([status])
+  @@index([customerId, fileChecksum])
   @@map("translation_documents")
 }
 
