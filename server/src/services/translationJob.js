@@ -1,9 +1,10 @@
 import prisma from '../config/db.js';
 import { uploadBuffer } from './oss.js';
 import { fileToMarkdown } from './parser/readers.js';
-import { parseMdToBlocks, flattenBlocks, extractBlockText } from './parser/mdToBlocks.js';
+import { parseMdToBlocks, flattenBlocks, extractBlockText, extractBlockMarkdown } from './parser/mdToBlocks.js';
 import { summarizeAcademicDocument, buildTranslationPrompt, translateBlockText } from './llm.js';
 import { deductPoints, estimateTranslationCost } from './customerPoints.js';
+import { protectMathSegments, restoreMathSegments, stripUnexpectedMathMarkup } from './translationMath.js';
 import crypto from 'crypto';
 
 const runningJobs = new Set();
@@ -480,12 +481,20 @@ async function runTranslation(documentId) {
       // When ensureParsedDocument returns Prisma blocks, `block.content` isn't present (it's `sourceContent`).
       // Prefer persisted `sourceText` from DB to avoid accidentally skipping translatable content.
       const text = String(existing?.sourceText || block.sourceText || extractBlockText(block) || '');
+      const markdownText = String(block?.sourceContent ? extractBlockMarkdown({ content: block.sourceContent }) : extractBlockMarkdown(block) || text);
       if (!text.trim()) {
         await prisma.translationBlock.update({ where: { id: block.id }, data: { status: 'skipped', translatedText: '', errorMsg: null } });
         skippedCount += 1;
       } else {
         try {
-          const translatedText = await translateBlockText(text, doc.translationPrompt, doc.summary, { signal: ctx.controller.signal });
+          let translatedText = text;
+          if (existing?.type === 'equation' || block.type === 'equation') {
+            translatedText = text;
+          } else {
+            const protectedMath = protectMathSegments(markdownText);
+            const llmOutput = await translateBlockText(protectedMath.text, doc.translationPrompt, doc.summary, { signal: ctx.controller.signal });
+            translatedText = restoreMathSegments(stripUnexpectedMathMarkup(llmOutput), protectedMath.segments);
+          }
           await prisma.translationBlock.update({ where: { id: block.id }, data: { status: 'translated', translatedText, errorMsg: null } });
           translatedCount += 1;
         } catch (err) {

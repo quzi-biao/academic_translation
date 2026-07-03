@@ -20,15 +20,12 @@ import rehypeKatex from 'rehype-katex';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { api, clearSession, getToken, setSession } from './api';
+import { KATEX_MACROS, normalizeMathExpression } from './math';
 import 'katex/dist/katex.min.css';
 import './styles.css';
 
 function escapeMarkdownMathText(text = '') {
   return String(text).replace(/([\\`*_[\]<>])/g, '\\$1');
-}
-
-function normalizeMathExpression(expression = '') {
-  return String(expression || '').trim();
 }
 
 function equationToMarkdown(expression = '') {
@@ -550,7 +547,7 @@ function MarkdownContent({ content }) {
   return <div className="markdown-content">
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[rehypeKatex]}
+      rehypePlugins={[[rehypeKatex, { macros: KATEX_MACROS, strict: 'ignore', trust: true, throwOnError: false }]]}
       components={{
         code({ inline, className, children, ...props }) {
           const match = /language-(\w+)/.exec(className || '');

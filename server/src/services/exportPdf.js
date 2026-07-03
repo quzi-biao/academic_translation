@@ -1,7 +1,25 @@
 import puppeteer from 'puppeteer-core';
 import { marked } from 'marked';
+import katex from 'katex';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { KATEX_MACROS, normalizeMathExpression } from './math.js';
 
 const CHROME_BIN = process.env.CHROME_BIN || '/snap/bin/chromium';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const KATEX_CSS_PATH = path.resolve(__dirname, '../../node_modules/katex/dist/katex.min.css');
+
+function loadKatexCss() {
+  const css = fs.readFileSync(KATEX_CSS_PATH, 'utf8');
+  const fontsDir = path.dirname(KATEX_CSS_PATH);
+  return css.replace(/url\((fonts\/[^)]+)\)/g, (_match, fontPath) => {
+    const fontUrl = pathToFileURL(path.join(fontsDir, fontPath)).href;
+    return `url("${fontUrl}")`;
+  });
+}
+
+const KATEX_CSS = loadKatexCss();
 
 function escapeHtml(input = '') {
   return String(input)
@@ -14,6 +32,25 @@ function escapeHtml(input = '') {
 
 function escapeAttr(input = '') {
   return escapeHtml(input).replace(/`/g, '&#96;');
+}
+
+function renderMath(expression, displayMode = false) {
+  const value = normalizeMathExpression(expression);
+  if (!value) return '';
+  return katex.renderToString(value, {
+    displayMode,
+    throwOnError: false,
+    strict: 'ignore',
+    trust: true,
+    output: 'htmlAndMathml',
+    macros: KATEX_MACROS,
+  });
+}
+
+function extractStandaloneDisplayMath(text) {
+  const value = String(text || '').trim();
+  const match = value.match(/^\$\$([\s\S]+?)\$\$$/);
+  return match ? match[1].trim() : '';
 }
 
 function pickText(block) {
@@ -49,8 +86,8 @@ function paragraphLikeMarkdown(text) {
 
 function protectMath(md) {
   return String(md || '')
-    .replace(/\$\$([\s\S]+?)\$\$/g, (_m, expr) => `<div class="math math-display" data-expr="${escapeAttr(expr.trim())}"></div>`)
-    .replace(/\$([^$\n]+?)\$/g, (_m, expr) => `<span class="math math-inline" data-expr="${escapeAttr(expr.trim())}"></span>`);
+    .replace(/\$\$([\s\S]+?)\$\$/g, (_m, expr) => `<div class="math math-display">${renderMath(expr, true)}</div>`)
+    .replace(/\$([^$\n]+?)\$/g, (_m, expr) => `<span class="math math-inline">${renderMath(expr, false)}</span>`);
 }
 
 function markdownToHtml(md) {
@@ -63,14 +100,19 @@ function renderTextBlock(block) {
   const text = pickText(block);
   if (!text) return '';
   const semanticType = String(block?.type || '').toLowerCase();
+  const standaloneDisplayMath = extractStandaloneDisplayMath(text);
 
   if (semanticType.includes('heading') || headingLevel > 0) {
     const html = markdownToHtml(normalizeMarkdown(text, headingLevel || 1));
     return `<section class="block block-heading level-${headingLevel || 1}">${html}</section>`;
   }
 
+  if (standaloneDisplayMath) {
+    return `<section class="block block-equation"><div class="math math-display">${renderMath(standaloneDisplayMath, true)}</div></section>`;
+  }
+
   if (semanticType.includes('equation')) {
-    return `<section class="block block-equation"><div class="math math-display" data-expr="${escapeAttr(text)}"></div></section>`;
+    return `<section class="block block-equation"><div class="math math-display">${renderMath(text, true)}</div></section>`;
   }
 
   if (semanticType.includes('code')) {
@@ -169,6 +211,7 @@ function buildHtml(document, blocks) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
+      ${KATEX_CSS}
       :root {
         --ink: #111111;
         --muted: #5f5f5f;
@@ -274,15 +317,21 @@ function buildHtml(document, blocks) {
         font-family: "Times New Roman", "Cambria Math", serif;
         letter-spacing: 0;
       }
-      .math-inline::before, .math-display::before {
-        content: attr(data-expr);
-        white-space: pre-wrap;
+      .math-inline .katex,
+      .math-display .katex {
+        font-size: 1em;
       }
       .math-display {
         display: block;
         text-align: center;
         font-size: 13px;
         line-height: 1.8;
+        overflow-x: auto;
+        overflow-y: hidden;
+      }
+      .math-display .katex-display {
+        margin: 0;
+        text-align: center;
       }
       .block-image {
         margin: 14px 0 16px;

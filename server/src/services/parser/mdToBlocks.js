@@ -124,3 +124,20 @@ export function extractBlockText(block) {
   if (c.alt || c.caption) return [c.alt, c.caption].filter(Boolean).join('\n');
   return '';
 }
+
+export function extractBlockMarkdown(block) {
+  const c = block.content || {};
+  if (Array.isArray(c.rich_text)) {
+    return c.rich_text.map((r) => {
+      if (!r) return '';
+      if (r.type === 'inline_equation') return `$${r.expression || ''}$`;
+      if (r.type === 'inline_code') return `\`${r.code || ''}\``;
+      if (r.type === 'link') return `[${r.text || r.href || ''}](${r.href || '#'})`;
+      return r.text || '';
+    }).join('');
+  }
+  if (c.code) return c.code;
+  if (c.expression) return `$$\n${c.expression}\n$$`;
+  if (c.alt || c.caption) return [c.alt, c.caption].filter(Boolean).join('\n');
+  return '';
+}
