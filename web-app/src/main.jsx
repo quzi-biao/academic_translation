@@ -212,6 +212,24 @@ function Dashboard() {
     await api(`/documents/${id}/start`, { method: 'POST' });
     await load();
   };
+  const confirmStartDoc = (e, doc) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (doc.status === 'completed') {
+      setConfirmState({
+        title: '再次翻译文献',
+        message: '再次翻译会覆盖当前译文结果，并再次消耗翻译点数，确定继续吗？',
+        confirmText: '确认翻译',
+        onConfirm: async () => {
+          setConfirmState(null);
+          await api(`/documents/${doc.id}/start`, { method: 'POST' });
+          await load();
+        },
+      });
+      return;
+    }
+    startDoc(e, doc.id);
+  };
   const stopDoc = async (e, id) => {
     e.preventDefault();
     e.stopPropagation();
@@ -239,14 +257,14 @@ function Dashboard() {
     <div className="card-menu" ref={openMenuId === d.id ? menuRef : null} onClick={(e) => e.stopPropagation()}>
       <button className="card-menu-trigger ghost icon-only" aria-label="操作菜单" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenMenuId((current) => current === d.id ? null : d.id); }}><Ellipsis size={16} /></button>
       {openMenuId === d.id && <div className="card-menu-popover">
-        {!isActiveTranslationStatus(d.status) && !['completed', 'failed'].includes(d.status) && <button type="button" className="menu-item" onClick={async (e) => { setOpenMenuId(null); await startDoc(e, d.id); }}><RefreshCcw size={15} />翻译</button>}
+        {!isActiveTranslationStatus(d.status) && <button type="button" className="menu-item" onClick={async (e) => { setOpenMenuId(null); confirmStartDoc(e, d); }}><RefreshCcw size={15} />翻译</button>}
         {isActiveTranslationStatus(d.status) && <button type="button" className="menu-item" onClick={async (e) => { setOpenMenuId(null); await stopDoc(e, d.id); }}><RefreshCcw size={15} />停止</button>}
         {d.status === 'failed' && <button type="button" className="menu-item" onClick={async (e) => { setOpenMenuId(null); await retryDoc(e, d.id); }}><RefreshCcw size={15} />重试</button>}
         <button type="button" className="menu-item danger" onClick={async (e) => { setOpenMenuId(null); await removeDoc(e, d.id); }}><Trash2 size={15} />删除</button>
       </div>}
     </div>
   </>;
-  return <Shell>
+  return <Shell contentClassName="dashboard-page">
     <Header title="文献列表" action={<Link className="primary-link" to="/upload">开始翻译</Link>} metaMode="logout" showMetaBalance={true} />
     <div className="doc-grid">{loading && <p>加载中...</p>}{docs.map((d) => d.status === 'completed'
       ? <Link className="doc-card" to={`/documents/${d.id}`} key={d.id}>{renderDocumentCardBody(d)}</Link>

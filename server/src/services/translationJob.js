@@ -44,11 +44,22 @@ function buildParserFileName(doc) {
 }
 
 async function hasChargedTranslation(documentId) {
+  const doc = await prisma.translationDocument.findUnique({
+    where: { id: documentId },
+    select: { translationRound: true },
+  });
+  const round = doc?.translationRound || 1;
+  const refIds = [buildTranslationChargeRef(documentId, round)];
+  if (round <= 1) refIds.push(documentId);
   const existing = await prisma.pointLedger.findFirst({
-    where: { refId: documentId, type: 'consume_translation' },
+    where: { refId: { in: refIds }, type: 'consume_translation' },
     select: { id: true },
   });
   return Boolean(existing);
+}
+
+function buildTranslationChargeRef(documentId, translationRound) {
+  return `${documentId}:round:${translationRound}`;
 }
 
 async function hasActiveTranslationForCustomer(customerId, excludeDocumentId = null) {
@@ -207,7 +218,8 @@ async function ensureBilling(doc, flatBlocks) {
   if (doc.status === 'queued' || doc.status === 'parsing' || doc.status === 'summarizing') {
     const charged = await hasChargedTranslation(doc.id);
     if (!charged) {
-      const deduction = await deductPoints(doc.customerId, doc.pointCost, 'consume_translation', `翻译文档 ${doc.originalName}`, doc.id);
+      const chargeRef = buildTranslationChargeRef(doc.id, doc.translationRound || 1);
+      const deduction = await deductPoints(doc.customerId, doc.pointCost, 'consume_translation', `翻译文档 ${doc.originalName}（第 ${doc.translationRound || 1} 次）`, chargeRef);
       if (!deduction.ok) {
         await prisma.translationDocument.update({
           where: { id: doc.id },
@@ -262,6 +274,7 @@ export async function createTranslationDocument({ customerId, file, autoStart = 
       sourceUrl,
       status: 'uploaded',
       progress: 0,
+      translationRound: 0,
     },
   });
   if (!autoStart) {
@@ -281,10 +294,10 @@ export async function createTranslationDocument({ customerId, file, autoStart = 
   }
   await prisma.translationDocument.update({
     where: { id: doc.id },
-    data: { status: 'queued', progress: 1 },
+    data: { status: 'queued', progress: 1, translationRound: 1 },
   });
   queueTranslation(doc.id);
-  return { ...doc, status: 'queued', progress: 1, autoStarted: true };
+  return { ...doc, status: 'queued', progress: 1, translationRound: 1, autoStarted: true };
 }
 
 export function queueTranslation(documentId) {
@@ -374,7 +387,7 @@ export async function startTranslation(documentId, customerId) {
   });
   if (!doc) return { ok: false, code: 404, error: '文档不存在' };
   if (runningJobs.has(documentId)) return { ok: false, code: 400, error: '任务已在处理中' };
-  if (['completed', 'queued', 'parsing', 'summarizing', 'translating'].includes(doc.status)) {
+  if (['queued', 'parsing', 'summarizing', 'translating'].includes(doc.status)) {
     return { ok: false, code: 400, error: '当前状态不支持开始翻译' };
   }
   if (await hasActiveTranslationForCustomer(customerId, documentId)) {
@@ -382,13 +395,27 @@ export async function startTranslation(documentId, customerId) {
   }
 
   stopRequests.delete(documentId);
+  const isRerun = doc.status === 'completed';
+  if (isRerun) {
+    await prisma.translationBlock.updateMany({
+      where: { documentId, type: { not: 'document' } },
+      data: {
+        status: 'pending',
+        translatedText: null,
+        errorMsg: null,
+      },
+    });
+  }
   await prisma.translationDocument.update({
     where: { id: documentId },
     data: {
       status: 'queued',
-      progress: Math.max(doc.progress || 0, doc.sourceMd ? 12 : 1),
+      progress: doc.sourceMd ? 12 : 1,
       errorMsg: null,
       completedAt: null,
+      translatedBlocks: 0,
+      startedAt: null,
+      ...(isRerun ? { translationRound: { increment: 1 } } : { translationRound: Math.max(doc.translationRound || 0, 1) }),
     },
   });
   queueTranslation(documentId);
