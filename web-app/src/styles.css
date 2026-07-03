@@ -73,14 +73,16 @@ button,input{font:inherit}
 .reader-translation-only .block-panel:last-child{max-width:980px;width:100%;margin:0 auto;animation:translationFocusIn .28s ease}
 .block-content{width:100%}
 .block-content.tone-heading-1 .markdown-content h1,.block-content.tone-heading-1 .markdown-content h2,.block-content.tone-heading-1 .markdown-content h3,.block-content.tone-heading-1 .markdown-content h4,.block-content.tone-heading-1 .markdown-content p:first-child:only-child{font-size:23px;line-height:1.35;font-weight:600}
-.block-content.tone-heading-2 .markdown-content h1,.block-content.tone-heading-2 .markdown-content h2,.block-content.tone-heading-2 .markdown-content h3,.block-content.tone-heading-2 .markdown-content h4,.block-content.tone-heading-2 .markdown-content p:first-child:only-child{font-size:19px;line-height:1.4;font-weight:600}
-.block-content.tone-heading-3 .markdown-content h1,.block-content.tone-heading-3 .markdown-content h2,.block-content.tone-heading-3 .markdown-content h3,.block-content.tone-heading-3 .markdown-content h4,.block-content.tone-heading-3 .markdown-content p:first-child:only-child{font-size:16px;line-height:1.45;font-weight:600}
+.block-content.tone-heading-2 .markdown-content h1,.block-content.tone-heading-2 .markdown-content h2,.block-content.tone-heading-2 .markdown-content h3,.block-content.tone-heading-2 .markdown-content h4,.block-content.tone-heading-2 .markdown-content p:first-child:only-child{font-size:20px;line-height:1.4;font-weight:600}
+.block-content.tone-heading-3 .markdown-content h1,.block-content.tone-heading-3 .markdown-content h2,.block-content.tone-heading-3 .markdown-content h3,.block-content.tone-heading-3 .markdown-content h4,.block-content.tone-heading-3 .markdown-content p:first-child:only-child{font-size:17px;line-height:1.45;font-weight:600}
 .block-content.tone-body .markdown-content{font-size:15px;line-height:1.6;font-weight:400}
 .block-content.tone-meta .markdown-content{font-size:13px;line-height:1.55;color:#555}
 .block-content.tone-quote .markdown-content{font-size:15px;line-height:1.6}
 .block-content .markdown-content:has(.katex-display){text-align:center}
 .block-media img,.markdown-content img{max-width:100%;border-radius:2px;display:block}
 .block-media figcaption,.md-figure figcaption{margin-top:4px;color:#444;font-size:12px}
+.block-media figcaption .markdown-content,.md-figure figcaption .markdown-content{font-size:12px;line-height:1.55;color:#444}
+.block-media figcaption .markdown-content:has(.katex-display),.md-figure figcaption .markdown-content:has(.katex-display){text-align:center}
 .markdown-content{color:#111;line-height:1.55;overflow-wrap:anywhere}
 .markdown-content > :first-child{margin-top:0}
 .markdown-content > :last-child{margin-bottom:0}

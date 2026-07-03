@@ -577,18 +577,27 @@ function MarkdownContent({ content }) {
 
 function BlockRenderer({ block, translated = false }) {
   if (block.type === 'image' && block.sourceContent?.url) {
-    return <figure className="block-media"><img src={block.sourceContent.url} alt={block.sourceContent.alt || ''} /><figcaption>{block.sourceContent.caption || block.sourceContent.alt || '图片'}</figcaption></figure>;
+    const caption = translated
+      ? (block.translatedText || block.sourceContent.caption || block.sourceContent.alt || '图片')
+      : (block.sourceContent.caption || block.sourceContent.alt || block.translatedText || '图片');
+    return <figure className="block-media">
+      <img src={block.sourceContent.url} alt={block.sourceContent.alt || ''} />
+      <figcaption><MarkdownContent content={caption} /></figcaption>
+    </figure>;
   }
   if (block.type === 'table') {
     return <div className="table-placeholder">表格结构已记录，请查看下方 `table_row / table_cell` 内容。</div>;
   }
   let text = translated ? (block.translatedText || (block.status === 'failed' ? block.errorMsg : '等待翻译...')) : (block.sourceText || blockFallback(block));
+  const headingLevel = getDisplayHeadingLevel(block);
 
   if (block.type === 'equation') {
     const expression = translated
       ? (block.translatedText || block.sourceContent?.expression || block.sourceText || '')
       : (block.sourceContent?.expression || block.sourceText || '');
     text = equationToMarkdown(expression);
+  } else if (headingLevel > 0) {
+    text = `${'#'.repeat(Math.min(headingLevel, 6))} ${text}`;
   } else if (!translated && Array.isArray(block.sourceContent?.rich_text)) {
     text = richTextToMarkdown(block.sourceContent.rich_text) || text;
   }
@@ -673,8 +682,22 @@ function blockFallback(b) {
   return '';
 }
 
+function inferNumberedHeadingLevel(text = '') {
+  const value = String(text || '').trim();
+  const match = value.match(/^(\d+(?:\.\d+)*)(?:\.|\s)/);
+  if (!match) return 0;
+  return Math.min(6, match[1].split('.').filter(Boolean).length);
+}
+
+function getDisplayHeadingLevel(block) {
+  const explicit = Number(block?.headingLevel || block?.level || block?.sourceContent?.level || String(block?.type || '').match(/^heading_(\d+)$/)?.[1] || 0);
+  const numbered = inferNumberedHeadingLevel(block?.sourceText || block?.translatedText || '');
+  if (numbered > 0 && explicit <= 1) return numbered;
+  return explicit;
+}
+
 function resolveBlockTone(block) {
-  const headingLevel = Number(block.headingLevel || block.level || 0);
+  const headingLevel = getDisplayHeadingLevel(block);
   const semanticType = String(block.type || '').toLowerCase();
   const text = String(block.sourceText || '').trim();
 
@@ -701,6 +724,11 @@ function resolveBlockTone(block) {
 function mergeShortBlocks(blocks) {
   const result = [];
   let buffer = null;
+  const isHeadingLike = (block) => {
+    const headingLevel = Number(block?.headingLevel || block?.level || block?.sourceContent?.level || 0);
+    const type = String(block?.type || '').toLowerCase();
+    return headingLevel > 0 || type.includes('heading') || type.includes('title');
+  };
 
   const flush = () => {
     if (!buffer) return;
@@ -714,7 +742,7 @@ function mergeShortBlocks(blocks) {
     const displayText = sourceText || translatedText;
     const shortEnough = [...displayText].length > 0 && [...displayText].length < 50;
 
-    if (block.type === 'image' || block.type === 'table' || block.type === 'equation' || block.type === 'code') {
+    if (isHeadingLike(block) || block.type === 'image' || block.type === 'table' || block.type === 'equation' || block.type === 'code') {
       flush();
       result.push(block);
       continue;
