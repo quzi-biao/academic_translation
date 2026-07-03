@@ -20,6 +20,65 @@ function toRichText(nodes = [], annotations = {}) {
   });
 }
 
+function nodesToPlainText(nodes = []) {
+  return nodes.map((n) => {
+    if (!n) return '';
+    if (n.type === 'text') return n.value || '';
+    if (n.type === 'break') return '\n';
+    if (n.type === 'inlineMath') return `$${n.value || ''}$`;
+    if (n.type === 'inlineCode') return n.value || '';
+    if (n.type === 'link') return nodesToPlainText(n.children || []) || n.url || '';
+    if (n.children) return nodesToPlainText(n.children);
+    return '';
+  }).join('');
+}
+
+function trimCaptionNodes(nodes = []) {
+  let start = 0;
+  let end = nodes.length;
+  while (start < end) {
+    const node = nodes[start];
+    if (node?.type === 'break') {
+      start += 1;
+      continue;
+    }
+    if (node?.type === 'text' && !(node.value || '').trim()) {
+      start += 1;
+      continue;
+    }
+    break;
+  }
+  while (end > start) {
+    const node = nodes[end - 1];
+    if (node?.type === 'break') {
+      end -= 1;
+      continue;
+    }
+    if (node?.type === 'text' && !(node.value || '').trim()) {
+      end -= 1;
+      continue;
+    }
+    break;
+  }
+  return nodes.slice(start, end);
+}
+
+function paragraphToImageBlocks(children, ctx) {
+  if (!children.length) return null;
+  if (children.every((c) => c.type === 'image')) {
+    return children.map((c) => leaf('image', { url: c.url, alt: c.alt || '', caption: c.title || '' }, ctx));
+  }
+  const imageNodes = children.filter((c) => c.type === 'image');
+  if (imageNodes.length !== 1 || children[0]?.type !== 'image') return null;
+  const [imageNode] = imageNodes;
+  const captionNodes = trimCaptionNodes(children.slice(1));
+  return [leaf('image', {
+    url: imageNode.url,
+    alt: imageNode.alt || '',
+    caption: nodesToPlainText(captionNodes) || imageNode.title || '',
+  }, ctx)];
+}
+
 function leaf(type, content, ctx) {
   return { id: uuidv4(), parent_id: ctx.parentId, root_id: ctx.rootId, type, sequence: ctx.sequence.value++, content, children: [] };
 }
@@ -33,7 +92,8 @@ function handleNode(node, ctx) {
     case 'heading': return [leaf(`heading_${Math.min(node.depth, 6)}`, { rich_text: toRichText(node.children), level: Math.min(node.depth, 6) }, ctx)];
     case 'paragraph': {
       const children = node.children || [];
-      if (children.length && children.every((c) => c.type === 'image')) return children.map((c) => leaf('image', { url: c.url, alt: c.alt || '', caption: c.title || '' }, ctx));
+      const imageBlocks = paragraphToImageBlocks(children, ctx);
+      if (imageBlocks) return imageBlocks;
       return [leaf('paragraph', { rich_text: toRichText(children) }, ctx)];
     }
     case 'image': return [leaf('image', { url: node.url, alt: node.alt || '', caption: node.title || '' }, ctx)];
