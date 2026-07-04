@@ -6,43 +6,20 @@ import { summarizeAcademicDocument, buildTranslationPrompt, translateBlockText }
 import { deductPoints, estimateTranslationCost } from './customerPoints.js';
 import { protectMathSegments, restoreMathSegments, stripUnexpectedMathMarkup } from './translationMath.js';
 import crypto from 'crypto';
+import {
+  ACTIVE_TRANSLATION_STATUSES,
+  abortError,
+  buildParserFileName,
+  buildTranslationChargeRef,
+  getTranslatableBlocks,
+  isAbortError,
+  normalizeExtension,
+  stripExtension,
+} from './translationJob.helpers.js';
 
 const runningJobs = new Set();
 const stopRequests = new Set();
 const jobControllers = new Map();
-const ACTIVE_TRANSLATION_STATUSES = ['queued', 'parsing', 'summarizing', 'translating'];
-
-function stripExtension(fileName = '') {
-  return String(fileName || '').replace(/\.[^.]+$/, '');
-}
-
-function normalizeExtension(ext = '') {
-  return String(ext || '').replace(/^\./, '').trim().toLowerCase();
-}
-
-function inferDocumentExtension(doc) {
-  const fromField = normalizeExtension(doc.fileExt);
-  if (fromField) return fromField;
-  const fromType = normalizeExtension(doc.fileType);
-  if (fromType && !fromType.includes('/')) return fromType;
-  const mimeMap = {
-    'application/pdf': 'pdf',
-    'application/msword': 'doc',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-    'text/markdown': 'md',
-    'text/plain': 'txt',
-  };
-  if (mimeMap[doc.fileType]) return mimeMap[doc.fileType];
-  const fromUrl = normalizeExtension((doc.sourceUrl || '').split('?')[0].split('/').pop()?.split('.').pop());
-  if (fromUrl) return fromUrl;
-  return normalizeExtension(doc.originalName.split('.').pop()) || 'pdf';
-}
-
-function buildParserFileName(doc) {
-  const ext = inferDocumentExtension(doc);
-  const base = stripExtension(doc.originalName || 'document') || 'document';
-  return `${base}.${ext}`;
-}
 
 async function hasChargedTranslation(documentId) {
   const doc = await prisma.translationDocument.findUnique({
@@ -57,10 +34,6 @@ async function hasChargedTranslation(documentId) {
     select: { id: true },
   });
   return Boolean(existing);
-}
-
-function buildTranslationChargeRef(documentId, translationRound) {
-  return `${documentId}:round:${translationRound}`;
 }
 
 async function hasActiveTranslationForCustomer(customerId, excludeDocumentId = null) {
@@ -93,16 +66,6 @@ async function abortIfStopped(documentId) {
   return true;
 }
 
-function abortError() {
-  const err = new Error('任务已停止');
-  err.code = 'ABORT_ERR';
-  return err;
-}
-
-function isAbortError(err) {
-  return err?.code === 'ABORT_ERR' || err?.name === 'AbortError' || /任务已停止/i.test(String(err?.message || ''));
-}
-
 function getJobContext(documentId) {
   let ctx = jobControllers.get(documentId);
   if (!ctx) {
@@ -133,10 +96,6 @@ function abortRunningJob(documentId) {
       try { child.kill('SIGKILL'); } catch {}
     }, 1200).unref?.();
   }
-}
-
-function getTranslatableBlocks(flatBlocks) {
-  return flatBlocks.filter((b) => !['document', 'table_row', 'table_cell', 'divider', 'frontmatter'].includes(b.type));
 }
 
 async function ensureParsedDocument(doc, options = {}) {
