@@ -17,6 +17,9 @@ router.get('/', async (req, res, next) => {
           { description: { contains: search, mode: 'insensitive' } },
           { contactName: { contains: search, mode: 'insensitive' } },
           { contactPhone: { contains: search, mode: 'insensitive' } },
+          { customer: { is: { username: { contains: search, mode: 'insensitive' } } } },
+          { customer: { is: { phone: { contains: search, mode: 'insensitive' } } } },
+          { customer: { is: { email: { contains: search, mode: 'insensitive' } } } },
         ],
       } : {}),
     };
@@ -25,9 +28,7 @@ router.get('/', async (req, res, next) => {
       where,
       orderBy: { createdAt: 'desc' },
       include: {
-        device: { select: { id: true, deviceCode: true, notes: true } },
-        channel: { select: { id: true, name: true } },
-        assignee: { select: { id: true, username: true } },
+        customer: { select: { id: true, username: true, phone: true, email: true } },
         messages: { orderBy: { createdAt: 'desc' } },
         _count: { select: { messages: true } },
       },
@@ -40,21 +41,19 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    const { deviceId, channelId, title, type = 'feedback', priority = 'medium', contactName, contactPhone, description, assigneeId } = req.body;
+    const { customerId, title, type = 'feedback', priority = 'medium', contactName, contactPhone, description } = req.body;
     if (!title?.trim() || !description?.trim()) {
       return res.status(400).json({ error: '标题和内容不能为空' });
     }
     const ticket = await prisma.supportTicket.create({
       data: {
-        deviceId: deviceId || null,
-        channelId: channelId || null,
+        customerId: customerId || null,
         title: title.trim(),
         type,
         priority,
         contactName: contactName?.trim() || null,
         contactPhone: contactPhone?.trim() || null,
         description: description.trim(),
-        assigneeId: assigneeId || null,
       },
     });
     res.status(201).json({ ticket });
@@ -65,12 +64,11 @@ router.post('/', async (req, res, next) => {
 
 router.patch('/:id', async (req, res, next) => {
   try {
-    const { status, priority, resolution, assigneeId, type, title, description } = req.body;
+    const { status, priority, resolution, type, title, description } = req.body;
     const data = {};
     if (status !== undefined) data.status = status;
     if (priority !== undefined) data.priority = priority;
     if (resolution !== undefined) data.resolution = resolution || null;
-    if (assigneeId !== undefined) data.assigneeId = assigneeId || null;
     if (type !== undefined) data.type = type;
     if (title !== undefined) data.title = String(title).trim();
     if (description !== undefined) data.description = String(description).trim();

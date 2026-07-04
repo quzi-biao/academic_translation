@@ -28,8 +28,20 @@ router.post('/', async (req, res, next) => {
 
 router.get('/', async (req, res, next) => {
   try {
-    const tickets = await prisma.supportTicket.findMany({ where: { customerId: req.customerId }, orderBy: { createdAt: 'desc' }, include: { messages: true } });
-    res.json({ tickets });
+    const page = Math.max(1, parseInt(req.query.page || '1'));
+    const limit = Math.min(20, Math.max(1, parseInt(req.query.limit || '10')));
+    const where = { customerId: req.customerId };
+    const [total, tickets] = await Promise.all([
+      prisma.supportTicket.count({ where }),
+      prisma.supportTicket.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: { messages: { orderBy: { createdAt: 'desc' } } },
+      }),
+    ]);
+    res.json({ tickets, total, page, limit });
   } catch (err) { next(err); }
 });
 

@@ -7,6 +7,7 @@ import LoginPage from './pages/LoginPage';
 import PlansPage from './pages/PlansPage';
 import ConfigPage from './pages/ConfigPage';
 import OrdersPage from './pages/OrdersPage';
+import TicketsPage from './pages/TicketsPage';
 import { adminApi } from './api';
 import './index.css';
 
@@ -64,9 +65,10 @@ function AdminLayout() {
     { key:'documents', icon:<FileTextOutlined/>, label:'翻译文档' },
     { key:'orders', icon:<ShoppingOutlined/>, label:'订单管理' },
     { key:'plans', icon:<ShoppingOutlined/>, label:'套餐管理' },
+    { key:'tickets', icon:<FileTextOutlined/>, label:'问题反馈' },
     { key:'config', icon:<SettingOutlined/>, label:'全局配置' },
   ];
-  return <Layout className="admin-layout"><Sider width={220} className="admin-sider" theme="light"><Link className="admin-logo" to="/admin/dashboard">闻一翻译</Link><Menu mode="inline" selectedKeys={[selectedKey]} items={menuItems} onClick={({key})=>navigate(`/admin/${key}`)}/></Sider><Layout><div className="admin-header"><span style={{ flex: 1, color: '#8c8c8c' }}>{menuItems.find(m=>m.key===selectedKey)?.label}</span><Dropdown menu={{ items:[{key:'logout', icon:<LogoutOutlined/>, label:'退出登录', danger:true}], onClick:logout }}><span style={{ cursor:'pointer', display:'flex', alignItems:'center', gap:8 }}><Avatar size={28}>{user?.username?.[0]?.toUpperCase() || 'A'}</Avatar>{user?.username || '管理员'}<DownOutlined style={{fontSize:10}}/></span></Dropdown></div><Content className="admin-content"><Routes><Route path="dashboard" element={<DashboardPage/>}/><Route path="customers" element={<CustomersPage/>}/><Route path="documents" element={<DocumentsPage/>}/><Route path="orders" element={<OrdersPage/>}/><Route path="plans" element={<PlansPage/>}/><Route path="config" element={<ConfigPage/>}/><Route index element={<Navigate to="dashboard" replace/>}/></Routes></Content></Layout></Layout>;
+  return <Layout className="admin-layout"><Sider width={220} className="admin-sider" theme="light"><Link className="admin-logo" to="/admin/dashboard">闻一翻译</Link><Menu mode="inline" selectedKeys={[selectedKey]} items={menuItems} onClick={({key})=>navigate(`/admin/${key}`)}/></Sider><Layout><div className="admin-header"><span style={{ flex: 1, color: '#8c8c8c' }}>{menuItems.find(m=>m.key===selectedKey)?.label}</span><Dropdown menu={{ items:[{key:'logout', icon:<LogoutOutlined/>, label:'退出登录', danger:true}], onClick:logout }}><span style={{ cursor:'pointer', display:'flex', alignItems:'center', gap:8 }}><Avatar size={28}>{user?.username?.[0]?.toUpperCase() || 'A'}</Avatar>{user?.username || '管理员'}<DownOutlined style={{fontSize:10}}/></span></Dropdown></div><Content className="admin-content"><Routes><Route path="dashboard" element={<DashboardPage/>}/><Route path="customers" element={<CustomersPage/>}/><Route path="documents" element={<DocumentsPage/>}/><Route path="orders" element={<OrdersPage/>}/><Route path="plans" element={<PlansPage/>}/><Route path="tickets" element={<TicketsPage/>}/><Route path="config" element={<ConfigPage/>}/><Route index element={<Navigate to="dashboard" replace/>}/></Routes></Content></Layout></Layout>;
 }
 
 export default function App() {

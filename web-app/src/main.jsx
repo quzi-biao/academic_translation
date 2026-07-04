@@ -7,8 +7,11 @@ import {
   Coins,
   Ellipsis,
   Eye,
+  FilePenLine,
   LogOut,
+  MessageSquareWarning,
   Pencil,
+  SquarePen,
   RotateCcw,
   RotateCw,
   Save,
@@ -228,6 +231,90 @@ function RenameModal({ open, currentName = '', value, onChange, onConfirm, onCan
   </div>;
 }
 
+function FeedbackWidget() {
+  const [open, setOpen] = useState(false);
+  const [content, setContent] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [page, setPage] = useState(1);
+  const [tickets, setTickets] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [noticeState, setNoticeState] = useState(null);
+  const limit = 5;
+
+  const loadTickets = async (nextPage = page) => {
+    const data = await api(`/tickets?page=${nextPage}&limit=${limit}`);
+    setTickets(data.tickets || []);
+    setTotal(data.total || 0);
+    setPage(data.page || nextPage);
+  };
+
+  useEffect(() => {
+    if (open) loadTickets(1);
+  }, [open]);
+
+  const submit = async () => {
+    const message = String(content || '').trim();
+    if (!message) return;
+    setBusy(true);
+    try {
+      await api('/tickets', { method: 'POST', body: { content: message } });
+      setContent('');
+      await loadTickets(1);
+      setNoticeState({
+        title: '提交成功',
+        message: '你的问题反馈已提交，我们会尽快查看并处理。',
+        onConfirm: () => setNoticeState(null),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const totalPages = Math.max(1, Math.ceil((total || 0) / limit));
+
+  return <>
+    <button className="feedback-fab" onClick={() => setOpen((value) => !value)} aria-label="问题反馈">
+      <MessageSquareWarning size={18} />
+      <span>问题反馈</span>
+    </button>
+    {open && <div className="feedback-panel">
+      <div className="feedback-panel-header">
+        <h3>问题反馈</h3>
+        <button className="ghost icon-only" onClick={() => setOpen(false)} aria-label="关闭">×</button>
+      </div>
+      <div className="feedback-history">
+        {tickets.length ? tickets.map((ticket) => <div className="feedback-history-item" key={ticket.id}>
+          <div className="feedback-history-meta">
+            <span>{new Date(ticket.createdAt).toLocaleString()}</span>
+            <span>{ticket.status}</span>
+          </div>
+          <p>{ticket.description}</p>
+          {ticket.resolution && <div className="feedback-history-reply">{ticket.resolution}</div>}
+        </div>) : <p className="feedback-empty">还没有提交记录</p>}
+      </div>
+      {totalPages > 1 && <div className="feedback-history-pagination">
+        <button className="ghost" disabled={page <= 1} onClick={() => loadTickets(page - 1)}>上一页</button>
+        <span>{page} / {totalPages}</span>
+        <button className="ghost" disabled={page >= totalPages} onClick={() => loadTickets(page + 1)}>下一页</button>
+      </div>}
+      <div className="feedback-form">
+        <textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder="请输入你遇到的问题或建议"
+        />
+        <button className="primary" onClick={submit} disabled={busy || !String(content || '').trim()}>{busy ? '提交中...' : '提交'}</button>
+      </div>
+    </div>}
+    <NoticeModal
+      open={Boolean(noticeState)}
+      title={noticeState?.title}
+      message={noticeState?.message}
+      onConfirm={noticeState?.onConfirm}
+    />
+  </>;
+}
+
 function BlockDeleteModal({ open, block, onConfirm, onCancel, busy = false }) {
   if (!open || !block) return null;
   return <div className="payment-modal-overlay" onClick={onCancel}>
@@ -246,17 +333,92 @@ function Dashboard() {
   const navigate = useNavigate();
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [openMenuId, setOpenMenuId] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const [noticeState, setNoticeState] = useState(null);
   const [renameState, setRenameState] = useState({ open: false, id: '', currentName: '', value: '', busy: false });
   const menuRef = useRef(null);
-  const load = async ({ silent = false } = {}) => {
-    if (!silent) setLoading(true);
-    const data = await api('/documents');
-    setDocs(data.documents || []);
-    if (!silent) setLoading(false);
+  const loadMoreRef = useRef(null);
+  const limit = 18;
+  const totalPages = Math.max(1, Math.ceil((total || 0) / limit));
+  const hasMore = page < totalPages;
+  const activeDocIds = useMemo(
+    () => docs.filter((doc) => isActiveTranslationStatus(doc.status)).map((doc) => doc.id),
+    [docs],
+  );
+  const activeDocRefreshKey = activeDocIds.join('|');
+  const getOtherActiveDoc = (excludeId) => docs.find((doc) => doc.id !== excludeId && isActiveTranslationStatus(doc.status));
+  const mergeDocumentIntoList = (nextDocument) => {
+    if (!nextDocument?.id) return;
+    setDocs((current) => current.map((doc) => (doc.id === nextDocument.id ? { ...doc, ...nextDocument } : doc)));
   };
-  useEffect(() => { load(); const t = setInterval(() => load({ silent: true }), 5000); return () => clearInterval(t); }, []);
+  const refreshDocumentInList = async (documentId) => {
+    const data = await api(`/documents/${documentId}`);
+    if (data?.document) mergeDocumentIntoList(data.document);
+  };
+  const showActiveDocNotice = (activeDoc) => {
+    setNoticeState({
+      title: '已有翻译任务进行中',
+      message: `当前已有文献《${stripFileExtension(activeDoc?.originalName || '未命名文献')}》正在翻译，请先等待它完成，或先停止当前任务后再开始新的翻译。`,
+      onConfirm: () => setNoticeState(null),
+    });
+  };
+  const showStartBlockedNotice = (message) => {
+    setNoticeState({
+      title: '暂时无法开始翻译',
+      message: message || '同一时间只能进行一个翻译任务，请先等待当前任务完成或停止当前任务。',
+      onConfirm: () => setNoticeState(null),
+    });
+  };
+  const load = async ({ silent = false, nextPage = page, append = false } = {}) => {
+    if (!silent && !append) setLoading(true);
+    if (append) setLoadingMore(true);
+    const data = await api(`/documents?page=${nextPage}&limit=${limit}`);
+    setDocs((current) => append ? [...current, ...(data.documents || [])] : (data.documents || []));
+    setTotal(data.total || 0);
+    setPage(data.page || nextPage);
+    if (!silent && !append) setLoading(false);
+    if (append) setLoadingMore(false);
+  };
+  useEffect(() => { load({ nextPage: 1 }); }, []);
+  useEffect(() => {
+    if (!activeDocIds.length) return undefined;
+    let cancelled = false;
+    const refreshActiveDocs = async () => {
+      const results = await Promise.all(activeDocIds.map((id) => api(`/documents/${id}`)));
+      if (cancelled) return;
+      const refreshedMap = new Map(
+        results
+          .map((item) => item.document)
+          .filter(Boolean)
+          .map((document) => [document.id, document]),
+      );
+      setDocs((current) => current.map((doc) => {
+        const refreshed = refreshedMap.get(doc.id);
+        return refreshed ? { ...doc, ...refreshed } : doc;
+      }));
+    };
+    refreshActiveDocs().catch(() => {});
+    const t = setInterval(() => { refreshActiveDocs().catch(() => {}); }, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [activeDocRefreshKey]);
+  useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!node || !hasMore) return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting && !loadingMore) {
+        load({ nextPage: page + 1, append: true, silent: true }).catch(() => {});
+      }
+    }, { rootMargin: '320px 0px 320px 0px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [page, hasMore, loadingMore]);
   useEffect(() => {
     const handlePointerDown = (event) => {
       if (!menuRef.current?.contains(event.target)) setOpenMenuId(null);
@@ -281,21 +443,48 @@ function Dashboard() {
       onConfirm: async () => {
         setConfirmState(null);
         await api(`/documents/${id}`, { method: 'DELETE' });
-        await load();
+        setDocs((current) => current.filter((doc) => doc.id !== id));
+        setTotal((current) => Math.max(0, current - 1));
       },
     });
   };
   const retryDoc = async (e, id) => {
-    e.preventDefault();
-    e.stopPropagation();
-    await api(`/documents/${id}/retry`, { method: 'POST' });
-    await load();
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    const activeDoc = getOtherActiveDoc(id);
+    if (activeDoc) {
+      showActiveDocNotice(activeDoc);
+      return;
+    }
+    try {
+      await api(`/documents/${id}/retry`, { method: 'POST' });
+      await refreshDocumentInList(id);
+    } catch (err) {
+      if (String(err.message || '').includes('同一时间只能进行一个翻译任务')) {
+        showStartBlockedNotice(err.message);
+        return;
+      }
+      throw err;
+    }
   };
   const startDoc = async (e, id) => {
-    e.preventDefault();
-    e.stopPropagation();
-    await api(`/documents/${id}/start`, { method: 'POST' });
-    await load();
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    const activeDoc = getOtherActiveDoc(id);
+    if (activeDoc) {
+      showActiveDocNotice(activeDoc);
+      return;
+    }
+    try {
+      await api(`/documents/${id}/start`, { method: 'POST' });
+      await refreshDocumentInList(id);
+    } catch (err) {
+      if (String(err.message || '').includes('同一时间只能进行一个翻译任务')) {
+        showStartBlockedNotice(err.message);
+        return;
+      }
+      throw err;
+    }
   };
   const confirmStartDoc = (e, doc) => {
     e.preventDefault();
@@ -307,8 +496,7 @@ function Dashboard() {
         confirmText: '确认翻译',
         onConfirm: async () => {
           setConfirmState(null);
-          await api(`/documents/${doc.id}/start`, { method: 'POST' });
-          await load();
+          await startDoc(e, doc.id);
         },
       });
       return;
@@ -326,7 +514,7 @@ function Dashboard() {
       onConfirm: async () => {
         setConfirmState(null);
         await api(`/documents/${id}/stop`, { method: 'POST' });
-        await load();
+        await refreshDocumentInList(id);
       },
     });
   };
@@ -346,9 +534,9 @@ function Dashboard() {
     if (!nextName || !renameState.id) return;
     setRenameState((current) => ({ ...current, busy: true }));
     try {
-      await api(`/documents/${renameState.id}`, { method: 'PATCH', body: { originalName: nextName } });
+      const data = await api(`/documents/${renameState.id}`, { method: 'PATCH', body: { originalName: nextName } });
+      if (data?.document) mergeDocumentIntoList(data.document);
       setRenameState({ open: false, id: '', currentName: '', value: '', busy: false });
-      await load();
     } catch (err) {
       setRenameState((current) => ({ ...current, busy: false }));
       setConfirmState({
@@ -371,8 +559,8 @@ function Dashboard() {
     <div className="card-menu" ref={openMenuId === d.id ? menuRef : null} onClick={(e) => e.stopPropagation()}>
       <button className="card-menu-trigger ghost icon-only" aria-label="操作菜单" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenMenuId((current) => current === d.id ? null : d.id); }}><Ellipsis size={16} /></button>
       {openMenuId === d.id && <div className="card-menu-popover">
-        <button type="button" className="menu-item" onClick={(e) => { setOpenMenuId(null); openRename(e, d); }}><Pencil size={15} />重命名</button>
-        <button type="button" className="menu-item" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenMenuId(null); navigate(`/documents/${d.id}/edit`); }}><Pencil size={15} />编辑</button>
+        <button type="button" className="menu-item" onClick={(e) => { setOpenMenuId(null); openRename(e, d); }}><SquarePen size={15} />重命名</button>
+        <button type="button" className="menu-item" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenMenuId(null); navigate(`/documents/${d.id}/edit`); }}><FilePenLine size={15} />编辑</button>
         {!isActiveTranslationStatus(d.status) && <button type="button" className="menu-item" onClick={async (e) => { setOpenMenuId(null); confirmStartDoc(e, d); }}><RefreshCcw size={15} />翻译</button>}
         {isActiveTranslationStatus(d.status) && <button type="button" className="menu-item" onClick={async (e) => { setOpenMenuId(null); await stopDoc(e, d.id); }}><RefreshCcw size={15} />停止</button>}
         {d.status === 'failed' && <button type="button" className="menu-item" onClick={async (e) => { setOpenMenuId(null); await retryDoc(e, d.id); }}><RefreshCcw size={15} />重试</button>}
@@ -385,6 +573,8 @@ function Dashboard() {
     <div className="doc-grid">{loading && <p>加载中...</p>}{docs.map((d) => d.status === 'completed'
       ? <Link className="doc-card" to={`/documents/${d.id}`} key={d.id}>{renderDocumentCardBody(d)}</Link>
       : <div className="doc-card doc-card-disabled" key={d.id} aria-disabled="true">{renderDocumentCardBody(d)}</div>)}</div>
+    {!loading && hasMore && <div className="load-more-sentinel" ref={loadMoreRef}>{loadingMore ? '加载更多中...' : '向下滚动加载更多'}</div>}
+    <FeedbackWidget />
     <ConfirmModal
       open={Boolean(confirmState)}
       title={confirmState?.title}
@@ -402,6 +592,12 @@ function Dashboard() {
       onConfirm={submitRename}
       onCancel={() => !renameState.busy && setRenameState({ open: false, id: '', currentName: '', value: '', busy: false })}
       busy={renameState.busy}
+    />
+    <NoticeModal
+      open={Boolean(noticeState)}
+      title={noticeState?.title}
+      message={noticeState?.message}
+      onConfirm={noticeState?.onConfirm}
     />
   </Shell>;
 }
@@ -487,7 +683,14 @@ function DocumentPage() {
   const [exportingPdf, setExportingPdf] = useState(false);
   const navigate = useNavigate();
   const load = async () => setDoc((await api(`/documents/${id}`)).document);
-  useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, [id]);
+  useEffect(() => {
+    load();
+  }, [id]);
+  useEffect(() => {
+    if (!doc || !isActiveTranslationStatus(doc.status)) return undefined;
+    const t = setInterval(load, 4000);
+    return () => clearInterval(t);
+  }, [id, doc?.status]);
   if (!doc) return <Shell><p>加载中...</p></Shell>;
   const retry = async () => { await api(`/documents/${id}/retry`, { method: 'POST' }); await load(); };
   const summaryContent = doc.summary || doc.errorMsg || '系统正在解析和总结文献。';

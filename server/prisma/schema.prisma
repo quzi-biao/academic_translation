@@ -41,8 +41,6 @@ model Customer {
   ledgers     PointLedger[]
   tickets     SupportTicket[]
 
-  @@index([phone])
-  @@index([email])
   @@map("customers")
 }
 
@@ -73,7 +71,7 @@ model PointLedger {
   createdAt  DateTime       @default(now())
 
   @@index([walletId])
-  @@index([customerId])
+  @@index([customerId, createdAt])
   @@map("point_ledgers")
 }
 
@@ -116,7 +114,9 @@ model Order {
 
   payment Payment?
 
-  @@index([customerId])
+  @@index([customerId, createdAt])
+  @@index([customerId, status, createdAt])
+  @@index([customerId, status, planId, createdAt])
   @@map("orders")
 }
 
@@ -166,6 +166,7 @@ model TranslationDocument {
 
   @@index([customerId, createdAt])
   @@index([status])
+  @@index([customerId, status])
   @@index([customerId, fileChecksum])
   @@map("translation_documents")
 }
@@ -187,6 +188,7 @@ model TranslationBlock {
   updatedAt      DateTime @updatedAt
 
   @@index([documentId, sequence])
+  @@index([documentId, status])
   @@map("translation_blocks")
 }
 

@@ -6,6 +6,7 @@ import ordersRouter from './orders.js';
 import plansRouter from './plans.js';
 import configRouter from './config.js';
 import agreementsRouter from './agreements.js';
+import ticketsRouter from './tickets.js';
 import { requireAdmin } from './auth.js';
 import { getAdminMetrics } from '../../services/adminMetrics.js';
 
@@ -18,6 +19,7 @@ router.use('/orders', ordersRouter);
 router.use('/plans', plansRouter);
 router.use('/config', configRouter);
 router.use('/agreements', agreementsRouter);
+router.use('/tickets', ticketsRouter);
 router.get('/dashboard', async (_req, res, next) => {
   try { res.json({ metrics: await getAdminMetrics() }); } catch (err) { next(err); }
 });
