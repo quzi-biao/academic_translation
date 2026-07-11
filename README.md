@@ -10,7 +10,7 @@
 | --- | --- |
 | 项目介绍 | [PROJECT_INTRO.md](./PROJECT_INTRO.md) |
 | 演示视频 | [闻一翻译.mp4](./docs/assets/wenyi-intro.mp4) |
-| 商务合作 | [小红书](https://xhslink.com/m/364W9UKcVdZ) |
+| 商务合作 | [合作咨询入口](https://xhslink.com/m/364W9UKcVdZ) |
 | 微信联系 | [微信二维码](./docs/assets/wechat-qr.jpg) |
 
 ## 项目截图
@@ -75,10 +75,10 @@
 
 进一步交流方式：
 
-- 小红书：[https://xhslink.com/m/364W9UKcVdZ](https://xhslink.com/m/364W9UKcVdZ)
+- 小红书： [合作咨询入口](https://xhslink.com/m/364W9UKcVdZ)
 - 如需进一步沟通，可扫码添加微信：
 
-![微信二维码](./docs/assets/wechat-qr.jpg)
+<img src="./docs/assets/wechat-qr.jpg" alt="微信二维码" width="160" />
 
 项目视频介绍：
 
