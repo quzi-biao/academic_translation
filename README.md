@@ -9,7 +9,7 @@
 | 入口 | 链接 |
 | --- | --- |
 | 项目介绍 | [PROJECT_INTRO.md](./PROJECT_INTRO.md) |
-| 演示视频 | [闻一翻译.mp4](./docs/assets/wenyi-intro.mp4) |
+| 视频预览 | [动态预览](./docs/assets/wenyi-intro-preview.gif) |
 | 商务合作 | [合作咨询入口](https://xhslink.com/m/364W9UKcVdZ) |
 | 微信联系 | [微信二维码](./docs/assets/wechat-qr.jpg) |
 
@@ -82,7 +82,7 @@
 
 项目视频介绍：
 
-[闻一翻译.mp4](./docs/assets/wenyi-intro.mp4)
+[![闻一翻译视频预览](./docs/assets/wenyi-intro-preview.gif)](./docs/assets/wenyi-intro.mp4)
 
 ## 仓库结构
 
